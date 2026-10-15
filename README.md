@@ -39,7 +39,7 @@ The version is shown on the title screen and the poem page. Each is tagged in gi
 | Version | What changed |
 |---|---|
 | 1.0.0 | Pixel art; one level per stanza (Hope, The Gale, Extremity) |
-| 1.1.0 | Pixel-art HUD, poem page and props |
+| 1.1.0 | art hotfixes, poem page and props |
 | 1.2.0 | Upgraded to Unity 6000.6.5f1 |
 | 1.3.0 | Hope bar and hearts, stanza cutscenes, weather, title screen |
 | 1.4.0 | The nest's tree matches each world |
