@@ -51,7 +51,7 @@ namespace FlappyBird
         private float timeScaleBeforePoem = 1f;
         private const string CreatorCredit = "Made by Alvin, Shridhar and Ishaan";
         // Shown on the title screen and poem page. See the version history in README.md.
-        public const string VersionLabel = "VERSION 1.6.0";
+        public const string VersionLabel = "VERSION 1.7.0";
         // Public-domain text: Academy of American Poets, poem 254 (Johnson).
         private const string PoemText =
             "Hope is the thing with feathers\n"
@@ -74,7 +74,9 @@ namespace FlappyBird
         private BirdThoughtNotes thoughts;
         private bool muted, galeThunder;
         private Rect muteButton, titleMuteButton;
-        private float lastCatch = -1, bossStart;
+        private float lastCatch = -1, bossStart, nestSink;
+        // How far the resting bird sinks into the nest: its lower half hides behind the bowl's rim.
+        private const float NestDepth = 6 / PixelArt.PixelsPerUnit;
         private int wordsCaught;
         // The words of a cutscene play a little tune as the bird catches them (a pentatonic scale).
         private static readonly int[] WordNotes = { 0, 2, 4, 7, 9, 12, 9, 7, 4, 2 };
@@ -363,6 +365,20 @@ namespace FlappyBird
 #endif
         }
 
+        // Space, the mouse button or a finger held down (the boss's Wave flies on this).
+        internal static bool FlapHeld()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return (Keyboard.current != null && Keyboard.current.spaceKey.isPressed)
+                || (Mouse.current != null && Mouse.current.leftButton.isPressed)
+                || (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed);
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKey(KeyCode.Space) || Input.GetMouseButton(0) || Input.touchCount > 0;
+#else
+            return false;
+#endif
+        }
+
         private static bool MutePressed()
         {
 #if ENABLE_INPUT_SYSTEM
@@ -477,7 +493,6 @@ namespace FlappyBird
                 }
                 // Out of hope the bird still flies - it never stops - but its wingbeats are weaker.
                 Bird.Flap(Energy > 0 ? 1 : 0.8f);
-                sfx.Play(Sfx.Flap, 0.6f);
             }
             if (State != PlayState.Playing) return;
             Energy = Mathf.Max(0, Energy - (energyDrain + 1.5f * LevelIndex) * Time.deltaTime);
@@ -1000,12 +1015,14 @@ namespace FlappyBird
                 birdArt.sprite = birdFrames[frame == 3 ? 1 : frame];
             }
             else birdArt.sprite = birdFrames[1];
-            // In the fight: flicker while safe after a hit, and turn blue (and upside down) while gravity is flipped.
+            // In the fight: flicker while safe after a hit.
             birdArt.enabled = !boss.Flickering || Mathf.Repeat(Time.time * 10, 1) < 0.6f;
-            birdArt.color = Bird.GravitySign < 0 ? new Color(0.55f, 0.75f, 1f) : Color.white;
-            birdArt.flipY = Bird.GravitySign < 0;
+            // Resting, the bird settles down into the nest (the bowl is drawn in front of it), with a
+            // slow breathing bob; it eases in and out so landing and take-off never pop.
             bool resting = State == PlayState.Ready && nest.gameObject.activeSelf;
-            birdArt.transform.localPosition = new Vector3(0, resting ? Mathf.Round(Mathf.Sin(Time.time * 2) + 0.5f) / PixelArt.PixelsPerUnit : 0, 0);
+            nestSink = Mathf.MoveTowards(nestSink, resting ? NestDepth : 0, Time.deltaTime * (resting ? 0.6f : 3f));
+            float breathe = resting ? Mathf.Round(Mathf.Sin(Time.time * 2) + 0.5f) : 0;
+            birdArt.transform.localPosition = new Vector3(0, Mathf.Round((breathe - nestSink * PixelArt.PixelsPerUnit)) / PixelArt.PixelsPerUnit, 0);
         }
 
         private void AnimateScenery()
@@ -1185,7 +1202,8 @@ namespace FlappyBird
             else
             {
                 if (sinceTitle < 0.5f) { uiAlpha = 1 - sinceTitle / 0.5f; GUI.color = new Color(1, 1, 1, uiAlpha); DrawTitle(width); }
-                uiAlpha = Mathf.Clamp01((sinceTitle - 0.3f) / 0.5f);
+                // The HUD steps aside while the end credits roll.
+                uiAlpha = Mathf.Clamp01((sinceTitle - 0.3f) / 0.5f) * (1 - boss.HudHide);
                 GUI.color = new Color(1, 1, 1, uiAlpha);
                 DrawHud(width);
             }
@@ -1374,7 +1392,7 @@ namespace FlappyBird
 
             // Back to this level's tree, from any point in the level.
             if (State == PlayState.Ready || State == PlayState.Playing || State == PlayState.GameOver || State == PlayState.AwaitingFlap
-                || State == PlayState.Boss)
+                || State == PlayState.Boss && boss.HudHide <= 0)
             {
                 resetButton = new Rect(UiMargin, UiHeight - UiMargin - 42, 168, 42);
                 if (Button(resetButton, "RESET LEVEL", 2, "reset")) DipToDark(ResetLevel);

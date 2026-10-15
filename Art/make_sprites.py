@@ -554,6 +554,62 @@ def scuff(img, salt, shape=True, tint=0.05):
     return img
 
 
+# Tiling art keeps its exact shape so its seams still line up.
+TILES = ("background", "ground", "pipe_top", "pipe_bottom", "panel", "parchment", "bar", "button", "button_hover",
+         "screen_frame", "branch", "tree_trunk")
+# 9-slice UI frames stretch their middle, so a single off pixel there would become a big block.
+STRETCHED = ("panel", "parchment", "bar", "button", "button_hover", "screen_frame")
+
+
+def worsen(img, salt, tiles, stretched=False):
+    """v1.7: rougher still, as if drawn quickly with a cheap palette. Colours snap to coarse
+    steps (so shading bands), more pixels land a shade off, and on non-tiling art the odd row
+    slips a pixel sideways and a few stray pixels bleed past the edges."""
+    img = img.copy()
+    px = img.load()
+    w, h = img.size
+    if not tiles:
+        for y in range(h):
+            if _noise(y, 3, salt + 9) < 0.12:  # this row was drawn a pixel too far right
+                row = [px[x, y] for x in range(w)]
+                for x in range(w):
+                    px[x, y] = row[x - 1] if x > 0 else CLEAR
+        bleed = []
+        for y in range(h):
+            for x in range(w):
+                if px[x, y][3] == 0 and _noise(x, y, salt + 7) < 0.08:
+                    for dx, dy in ((-1, 0), (0, -1), (1, 0), (0, 1)):
+                        nx, ny = x + dx, y + dy
+                        if 0 <= nx < w and 0 <= ny < h and px[nx, ny][3]:
+                            bleed.append((x, y, px[nx, ny]))
+                            break
+        for x, y, col in bleed:
+            px[x, y] = col
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if a == 0:
+                continue
+            if not stretched and _noise(x, y, salt + 5) < (0.012 if tiles else 0.03):
+                d = 26 if _noise(y, x, salt + 6) < 0.5 else -26
+                r, g, b = r + d, g + d, b + d
+            r, g, b = (max(0, min(255, int(round(v / 24)) * 24)) for v in (r, g, b))
+            px[x, y] = (r, g, b, a)
+    return img
+
+
+def worsen_all(folder):
+    """Runs worsen() over every PNG the game loads (the font is drawn in code and stays crisp)."""
+    for root, _, files in os.walk(folder):
+        for name in sorted(files):
+            if not name.endswith(".png"):
+                continue
+            path = os.path.join(root, name)
+            stem = name[:-4]
+            salt = sum(ord(ch) for ch in os.path.relpath(path, folder))
+            worsen(Image.open(path).convert("RGBA"), salt, stem in TILES, stem in STRETCHED).save(path)
+
+
 # ------------------------------------------------------------------ UI + props
 # 9-slice frames: K outline, L rim, D inner band, F fill. Borders are 3px.
 def frame(rows, pal):
@@ -898,6 +954,9 @@ def main():
                 tiles = name in ("panel", "parchment", "bar", "button", "button_hover", "screen_frame", "branch", "tree_trunk")
                 scuff(im, 60 + i, shape=not tiles, tint=0.03 if tiles else 0.05).save(os.path.join(folder, name + ".png"))
         print("built", group)
+    for folder in (SPRITES, GAME):
+        worsen_all(folder)
+    print("roughened everything")
 
 
 if __name__ == "__main__":

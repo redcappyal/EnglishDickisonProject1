@@ -7,19 +7,16 @@ namespace FlappyBird
     {
         private Rigidbody2D body;
         private FlappyBirdGame game;
-        private float flapSpeed, gravity, gravitySign = 1;
+        private float flapSpeed;
         private CircleCollider2D hitbox;
         private float recoveryUntil;
         public bool Recovering { get; private set; }
         public float VerticalSpeed => body.linearVelocity.y;
-        // -1 while gravity is flipped (the boss's "Slant"): the bird falls up and flaps down.
-        public float GravitySign => gravitySign;
 
         public void Initialize(FlappyBirdGame owner, float gravity, float impulse)
         {
             game = owner;
             flapSpeed = impulse;
-            this.gravity = gravity;
             body = GetComponent<Rigidbody2D>();
             body.gravityScale = gravity;
             body.constraints = RigidbodyConstraints2D.FreezeRotation;
@@ -33,7 +30,6 @@ namespace FlappyBird
         {
             Recovering = false;
             hitbox.enabled = true;
-            FlipGravity(false);
             body.simulated = false;
             body.linearVelocity = Vector2.zero;
             transform.SetPositionAndRotation(new Vector3(-1.5f, 0, 0), Quaternion.identity);
@@ -43,13 +39,7 @@ namespace FlappyBird
         public void Flap(float strength = 1)
         {
             body.simulated = true;
-            body.linearVelocity = new Vector2(0, flapSpeed * strength * gravitySign);
-        }
-
-        public void FlipGravity(bool flipped)
-        {
-            gravitySign = flipped ? -1 : 1;
-            body.gravityScale = gravity * gravitySign;
+            body.linearVelocity = new Vector2(0, flapSpeed * strength);
         }
 
         // Sets the vertical speed outright, such as bouncing off the floor in the boss fight.
@@ -88,7 +78,7 @@ namespace FlappyBird
         {
             bool flying = game != null && (game.State == FlappyBirdGame.PlayState.Playing
                 || game.State == FlappyBirdGame.PlayState.Boss && body.simulated);
-            if (flying) transform.rotation = Quaternion.Euler(0, 0, Mathf.Clamp(body.linearVelocity.y * 5 * gravitySign, -65, 25) * gravitySign);
+            if (flying) transform.rotation = Quaternion.Euler(0, 0, Mathf.Clamp(body.linearVelocity.y * 5, -65, 25));
         }
 
         private void OnCollisionEnter2D(Collision2D collision)

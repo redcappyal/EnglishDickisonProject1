@@ -17,7 +17,14 @@ After the Gale's fifteenth pipe, a nine-second **Warmth** interlude brings out t
 
 v 1.4.1: **Hope never stops at all.** There is no game over: after a crash the game freezes for a second, then you flap and carry on. The score is simply how many times you crashed, and your record is the **fewest crashes** in a full run. Your **hope** bar drains as you fly and each crash costs some; grab hearts (placed a little out of the way) to refill it. With no hope left the bird still flies, just with weaker wingbeats. At the end of the Gale the storm surges ("And sore must be the storm"): heavier rain, lightning, gusts that shove the bird and faster pipes, until it breaks as you leave.
 
-v 1.6.0: **The boss.** After Extremity's last pipe the world stops, the music goes quiet, and Emily Dickinson is waiting. She talks in dashes and Capitals and attacks the way a certain skeleton does: walls of dashes, blue dashes that only sting a rising bird, giant quills that fire beams, falling capital letters, and "tell it Slant" gravity flips, with black cuts between attacks. She can't be hit back; you just have to keep flying until she tires. Hits count as crashes and cost hope, but the run never ends. When she falls asleep, fly to her. Sound effects (all synthesized in code) and a mute button (or **M**) are new too.
+v 1.6.0: **The boss.** After Extremity's last pipe the world stops, the music goes quiet, and Emily Dickinson is waiting. She talks in dashes and Capitals and fights the way a certain skeleton does, with black cuts between attacks. She can't be hit back; you just have to keep flying until she tires. Hits count as crashes and cost hope, but the run never ends. When she falls asleep, fly to her, and stay for the credits. Sound effects (all synthesized in code) and a mute button (or **M**) are new too.
+
+v 1.7.0: her attacks, in order:
+1. **Fascicles** - she sewed her poems into little books by hand. Gates of stitched manuscript pages open and shut on the beat of her music; time your way through.
+2. **Blanks** - a line of the poem with a word missing. Three windows, three words; fly through the right one before she inks the others shut.
+3. **The Wave** ("tell all the truth - but tell it Slant -") - Geometry Dash's wave: hold to fly up at a slant, let go to fly down, through a narrowing zigzag tunnel.
+4. **Quills** - giant quills charge and fire beams across the sky.
+5. **My Letter to the World** - everything at once, in quick cuts, ending on the line the whole game argues: "And never stops - at ___".
 
 See [the framework guide](Assets/FlappyBird/README.md) for customization.
 
@@ -27,7 +34,7 @@ In Unity, **Flappy Bird > Build WebGL** writes the site to `Builds/WebGL` (gzip 
 
 ## Versions
 
-The version is shown on the title screen and the poem page. Each is tagged in git (`v1.0.0` ... `v1.6.0`).
+The version is shown on the title screen and the poem page. Each is tagged in git (`v1.0.0` ... `v1.7.0`).
 
 | Version | What changed |
 |---|---|
@@ -40,6 +47,7 @@ The version is shown on the title screen and the poem page. Each is tagged in gi
 | 1.5.0 | Smooth transitions everywhere; the tree glides in at each level; Reset Level button; rougher pipes; faster UI |
 | 1.5.1 | Skipped cutscenes fade their words out; clearer reset icon |
 | 1.6.0 | Boss fight against Emily Dickinson; sound effects; mute; WebGL build, playable online |
+| 1.7.0 | New boss attacks (Fascicles, Blanks, the Wave, Quills, Letter to the World); end credits; no flap sound; the bird sits in its nest; rougher pixel art everywhere |
 
 A separate experimental version, **beta-version**, lives in the fork [flesheatingbacteria/EnglishDickisonProject1](https://github.com/flesheatingbacteria/EnglishDickisonProject1) ([play it](https://flesheatingbacteria.github.io/EnglishDickisonProject1/beta/)). It builds levels from the poem's form: meter, dashes and rhymes, and ends with "The Quiet" instead of the boss.
 

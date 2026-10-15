@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace FlappyBird
 {
-    public enum Sfx { Flap, Point, Crash, Heart, Thunder, Gust, Click, Word, Voice, Hurt, Charge, Beam, Slam, Cut, Win }
+    public enum Sfx { Point, Crash, Heart, Thunder, Gust, Click, Word, Voice, Hurt, Charge, Beam, Cut, Win }
 
     // Short sound effects, synthesized in code like the music so there are no audio files to import.
     // A few sources take turns, so sounds overlap and each can have its own pitch.
@@ -25,7 +25,6 @@ namespace FlappyBird
                 sources[i].ignoreListenerPause = true;
             }
             clips = new AudioClip[Enum.GetValues(typeof(Sfx)).Length];
-            clips[(int)Sfx.Flap] = Make("Flap", 0.09f, t => Noise() * Env(t, 0.004f, 0.06f) * 0.35f + Chirp(t, 520, 820, 0.09f) * Env(t, 0.004f, 0.04f) * 0.25f);
             clips[(int)Sfx.Point] = Make("Point", 0.16f, t => Tone(t < 0.06f ? 988 : 1319, t) * Env(t < 0.06f ? t : t - 0.06f, 0.003f, 0.08f) * 0.3f);
             clips[(int)Sfx.Crash] = Make("Crash", 0.4f, t => Noise() * Env(t, 0.002f, 0.12f) * 0.6f + Chirp(t, 160, 50, 0.4f) * Env(t, 0.002f, 0.3f) * 0.7f);
             clips[(int)Sfx.Heart] = Make("Heart", 0.42f, t =>
@@ -52,7 +51,6 @@ namespace FlappyBird
             clips[(int)Sfx.Hurt] = Make("Hurt", 0.26f, t => Square(Mathf.Lerp(420, 140, t / 0.26f), t) * Env(t, 0.002f, 0.18f) * 0.22f);
             clips[(int)Sfx.Charge] = Make("Charge", 0.6f, t => Chirp(t, 260, 1250, 0.6f) * (0.6f + 0.4f * Mathf.Sin(t * 90)) * Mathf.Min(1, t / 0.05f) * 0.2f);
             clips[(int)Sfx.Beam] = Make("Beam", 0.55f, t => (Noise() * 0.5f + Saw(110, t) * 0.6f + Saw(165, t) * 0.3f) * Env(t, 0.004f, 0.4f) * 0.4f);
-            clips[(int)Sfx.Slam] = Make("Slam", 0.3f, t => (Chirp(t, 140, 60, 0.3f) + Noise() * Env(t, 0.001f, 0.02f)) * Env(t, 0.001f, 0.22f) * 0.7f);
             clips[(int)Sfx.Cut] = Make("Cut", 0.06f, t => Noise() * Env(t, 0.001f, 0.025f) * 0.3f);
             clips[(int)Sfx.Win] = Make("Win", 1.4f, t =>
             {

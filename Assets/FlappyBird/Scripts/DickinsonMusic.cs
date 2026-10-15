@@ -18,6 +18,9 @@ namespace FlappyBird
         public int CurrentBeat => source != null && source.isPlaying && !Muted && level >= 0
             ? Mathf.FloorToInt(source.time / BeatDuration(level)) : -1;
         private static float BeatDuration(int theme) => theme == 0 ? 0.48f : theme == 1 ? 0.6f : theme == 2 ? 0.68f : 0.36f;
+        public float BeatLength => BeatDuration(level >= 0 ? level : BossTheme);
+        // Where the music is, in seconds (real time when nothing is playing), for things that move to the beat.
+        public float SongTime => source != null && source.isPlaying ? source.time : Time.unscaledTime;
         // Mute silences everything (music and sound effects) through the listener.
         public bool Muted => AudioListener.volume <= 0;
 

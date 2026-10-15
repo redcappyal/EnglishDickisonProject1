@@ -146,18 +146,22 @@ namespace FlappyBird
 
         private static void Grain(Color32[] pixels, int seed)
         {
-            // Original backgrounds scuff 1.5% of their pixels; keep that sparse texture.
-            // Match their +/-14 RGB value shifts without changing silhouettes.
+            // Match the other backgrounds (Art/make_sprites.py): 1.5% of pixels scuffed by +/-14,
+            // then v1.7's rougher pass - another 1.2% shifted by +/-26 and every colour snapped
+            // to a coarse palette - without changing silhouettes.
             System.Random random = new System.Random(seed);
             for (int i = 0; i < pixels.Length; i++)
             {
-                if (pixels[i].a == 0 || random.NextDouble() >= 0.015) continue;
+                if (pixels[i].a == 0) continue;
                 Color32 color = pixels[i];
-                int shift = random.Next(2) == 0 ? -14 : 14;
-                pixels[i] = Ink((byte)Mathf.Clamp(color.r + shift, 0, 255),
-                    (byte)Mathf.Clamp(color.g + shift, 0, 255), (byte)Mathf.Clamp(color.b + shift, 0, 255), color.a);
+                int shift = random.NextDouble() < 0.015 ? (random.Next(2) == 0 ? -14 : 14) : 0;
+                if (random.NextDouble() < 0.012) shift += random.Next(2) == 0 ? -26 : 26;
+                pixels[i] = Ink(Coarse(color.r + shift), Coarse(color.g + shift), Coarse(color.b + shift), color.a);
             }
         }
+
+        private static byte Coarse(int value) => (byte)Mathf.Clamp(Mathf.RoundToInt(value / 24f) * 24, 0, 255);
+
 
         // Art coordinates start at the upper left, matching Art/make_sprites.py.
         private static void Fill(Color32[] pixels, int x0, int y0, int x1, int y1, Color32 color)
