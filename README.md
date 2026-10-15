@@ -13,8 +13,6 @@
 
 Three levels follow the three stanzas of "Hope" is the thing with feathers: **Hope**, **The Gale** and **Extremity**, 15 pipes each. Between levels (and at the start) a cutscene flies the bird through the next stanza while the world and its weather blend into the next one.
 
-After the Gale's fifteenth pipe, a nine-second **Warmth** interlude brings out the sun over a village for "That kept so many warm -". Rain and storm clouds clear, the bird glides safely, and the music returns to the warm theme before the third stanza introduces the frozen land. Space or click continues once the storm has cleared.
-
 v 1.4.1: **Hope never stops at all.** There is no game over: after a crash the game freezes for a second, then you flap and carry on. The score is simply how many times you crashed, and your record is the **fewest crashes** in a full run. Your **hope** bar drains as you fly and each crash costs some; grab hearts (placed a little out of the way) to refill it. With no hope left the bird still flies, just with weaker wingbeats. At the end of the Gale the storm surges ("And sore must be the storm"): heavier rain, lightning, gusts that shove the bird and faster pipes, until it breaks as you leave.
 
 v 1.6.0: **The boss.** After Extremity's last pipe the world stops, the music goes quiet, and Emily Dickinson is waiting. She talks in dashes and Capitals and fights the way a certain skeleton does, with black cuts between attacks. She can't be hit back; you just have to keep flying until she tires. Hits count as crashes and cost hope, but the run never ends. When she falls asleep, fly to her, and stay for the credits. Sound effects (all synthesized in code) and a mute button (or **M**) are new too.
