@@ -18,7 +18,7 @@ namespace FlappyBird
         // ones are inked shut just before the bird arrives.
         private sealed class Column
         {
-            public float X, Speed, Phase;
+            public float X, Speed, Phase, Age;
             public float[] GapY, Half;
             public bool Fascicle, Inked, Passed;
             public Blank Blank;
@@ -57,13 +57,13 @@ namespace FlappyBird
         // The first Wave is a warm-up; the one in her Letter is built like an easy demon level:
         // narrow, fast and speeding up, with short runs and the odd flat stretch you have to tap through.
         private static readonly WaveStyle FirstWave = new WaveStyle
-            { Seed = 1830, Seconds = 20, StartHalf = 1.3f, EndHalf = 0.95f, StartSpeed = 4.5f, EndSpeed = 4.5f, MinRun = 0.8f, MaxRun = 2.2f };
+            { Seed = 1830, Seconds = 20, StartHalf = 1.4f, EndHalf = 1.1f, StartSpeed = 4.2f, EndSpeed = 4.2f, MinRun = 0.9f, MaxRun = 2.2f };
         private static readonly WaveStyle DemonWave = new WaveStyle
-            { Seed = 1886, Seconds = 24, StartHalf = 0.7f, EndHalf = 0.55f, StartSpeed = 5.8f, EndSpeed = 7.2f, MinRun = 0.8f, MaxRun = 1.8f, Flats = 0.1f };
+            { Seed = 1886, Seconds = 24, StartHalf = 0.82f, EndHalf = 0.66f, StartSpeed = 5.4f, EndSpeed = 6.6f, MinRun = 0.9f, MaxRun = 1.8f, Flats = 0.06f };
         private static readonly WaveStyle EasyWave = new WaveStyle
-            { Seed = 1861, Seconds = 20, StartHalf = 1.6f, EndHalf = 1.35f, StartSpeed = 3.8f, EndSpeed = 3.8f, MinRun = 1f, MaxRun = 2.4f };
+            { Seed = 1861, Seconds = 20, StartHalf = 1.7f, EndHalf = 1.45f, StartSpeed = 3.6f, EndSpeed = 3.6f, MinRun = 1f, MaxRun = 2.4f };
         private static readonly WaveStyle EasyLetterWave = new WaveStyle
-            { Seed = 1890, Seconds = 18, StartHalf = 1.3f, EndHalf = 1.1f, StartSpeed = 4.5f, EndSpeed = 5f, MinRun = 0.9f, MaxRun = 2f };
+            { Seed = 1890, Seconds = 18, StartHalf = 1.4f, EndHalf = 1.2f, StartSpeed = 4.2f, EndSpeed = 4.6f, MinRun = 0.9f, MaxRun = 2f };
         private const float WaveStartY = 0.3f; // the height the bird is set back to between attacks
         private const float Pixel = 2 / PixelArt.PixelsPerUnit; // she's drawn at twice the usual scale
         // The blanks: the line around the missing word, the right word, then two that don't belong.
@@ -365,8 +365,11 @@ namespace FlappyBird
 
         // ---- Attacks ---------------------------------------------------------------------------
 
-        // Fascicles: pages stitched into gates. Each gate's gap opens and shuts on the music's
-        // beat (every gate a quarter-bar out of step with the last), so the trick is timing.
+        // Fascicles: pages stitched into gates whose gaps open and shut, a bar of the music at a
+        // time. The bird can't wait for a gate - it only flies up and down - so each gate's rhythm
+        // is set as it appears so that it is always open while it passes the bird (somewhere in the
+        // middle of its open stretch, never right at the edge). Hard to read, never impossible.
+        private const float GateBar = 1.44f; // four beats of the boss theme
         private IEnumerator Fascicles(float seconds, float speed, float every)
         {
             float gapY = BirdY;
@@ -375,9 +378,10 @@ namespace FlappyBird
                 if (t >= next)
                 {
                     gapY = Mathf.Clamp(gapY + Random.Range(-1.6f, 1.6f), Floor + 1.7f, Top - 1.7f);
+                    float travel = (Right + 1 - BirdX) / speed;
                     columns.Add(new Column
                     {
-                        X = Right + 1, Speed = speed, Fascicle = true, Phase = Random.Range(0, 4) * 0.25f,
+                        X = Right + 1, Speed = speed, Fascicle = true, Phase = Random.Range(0.14f, 0.36f) * GateBar - travel,
                         GapY = new[] { gapY }, Half = new[] { 1.3f }
                     });
                     next += every;
@@ -386,10 +390,10 @@ namespace FlappyBird
             }
         }
 
-        // 0 shut .. 1 open, over a bar of four beats: open, stitch shut, hold, unpick.
-        private float Openness(float phase)
+        // 0 shut .. 1 open, over a bar: open (the first half), stitch shut, hold, unpick.
+        private static float Openness(Column gate)
         {
-            float f = Mathf.Repeat(music.SongTime / (music.BeatLength * 4) + phase, 1);
+            float f = Mathf.Repeat((gate.Age + gate.Phase) / GateBar, 1);
             return f < 0.5f ? 1 : f < 0.62f ? 1 - (f - 0.5f) / 0.12f : f < 0.86f ? 0 : (f - 0.86f) / 0.14f;
         }
 
@@ -570,7 +574,8 @@ namespace FlappyBird
             {
                 Column column = columns[i];
                 column.X -= column.Speed * dt;
-                if (column.Fascicle) column.Half[0] = Mathf.Lerp(easy ? 0.55f : 0.15f, 1.3f, Openness(column.Phase));
+                column.Age += dt;
+                if (column.Fascicle) column.Half[0] = Mathf.Lerp(easy ? 0.55f : 0.15f, 1.3f, Openness(column));
                 else if (!column.Inked && column.X - BirdX < column.Speed * 0.55f)
                 {
                     // She strikes out the wrong words just before the bird gets there.

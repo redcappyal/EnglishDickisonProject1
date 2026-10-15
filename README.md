@@ -20,7 +20,7 @@ v 1.4.1: **Hope never stops at all.** There is no game over: after a crash the g
 v 1.6.0: **The boss.** After Extremity's last pipe the world stops, the music goes quiet, and Emily Dickinson is waiting. She talks in dashes and Capitals and fights the way a certain skeleton does, with black cuts between attacks. She can't be hit back; you just have to keep flying until she tires. Hits count as crashes and cost hope, but the run never ends. When she falls asleep, fly to her, and stay for the credits. Sound effects (all synthesized in code) and a mute button (or **M**) are new too.
 
 v 1.7.0 / 1.8.0: her attacks, in order. Between them a page of ink turns across the screen with the next attack's name on it:
-1. **Fascicles** - she sewed her poems into little books by hand. Gates of stitched manuscript pages open and shut on the beat of her music; time your way through.
+1. **Fascicles** - she sewed her poems into little books by hand. Gates of stitched manuscript pages open and shut as they come; each is timed to be open as it reaches you, so it's about reading them and getting to the gap.
 2. **Blanks** - a line of the poem with a word missing. Three windows, three words; fly through the right one before she inks the others shut.
 3. **The Wave** ("tell all the truth - but tell it Slant -") - Geometry Dash's wave: hold to fly up at a slant, let go to fly down, through a narrowing zigzag tunnel whose walls close in around you.
 4. **Quills** - giant quills charge and fire beams across the sky.
@@ -34,7 +34,7 @@ In Unity, **Flappy Bird > Build WebGL** writes the site to `Builds/WebGL` (gzip 
 
 ## Versions
 
-The version is shown on the title screen and the poem page. Each is tagged in git (`v1.0.0` ... `v1.8.1`).
+The version is shown on the title screen and the poem page. Each is tagged in git (`v1.0.0` ... `v1.8.2`).
 
 | Version | What changed |
 |---|---|
@@ -50,6 +50,7 @@ The version is shown on the title screen and the poem page. Each is tagged in gi
 | 1.7.0 | New boss attacks (Fascicles, Blanks, the Wave, Quills, Letter to the World); end credits; no flap sound; the bird sits in its nest; rougher pixel art everywhere |
 | 1.8.0 | One big tree from the ground in every world; page-turn transitions between boss attacks; longer Waves and a demon-level final Wave; Settings menu (volume slider, easy mode, credits); code tidied |
 | 1.8.1 | Levels button on the title screen (any stanza, or straight to the boss); Stardew Valley in the credits |
+| 1.8.2 | Fascicle gates are always open as they pass the bird (hard, never impossible); every Wave a little wider and slower |
 
 A separate experimental version, **beta-version**, lives in the fork [flesheatingbacteria/EnglishDickisonProject1](https://github.com/flesheatingbacteria/EnglishDickisonProject1) ([play it](https://flesheatingbacteria.github.io/EnglishDickisonProject1/beta/)). It builds levels from the poem's form: meter, dashes and rhymes, and ends with "The Quiet" instead of the boss.
 

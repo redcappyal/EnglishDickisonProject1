@@ -55,7 +55,7 @@ namespace FlappyBird
         private float timeScaleBeforeOverlay = 1f;
         private const string CreatorCredit = "Made by Alvin, Shridhar and Ishaan";
         // Shown on the title screen and poem page. See the version history in README.md.
-        public const string VersionLabel = "VERSION 1.8.1";
+        public const string VersionLabel = "VERSION 1.8.2";
         // Public-domain text: Academy of American Poets, poem 254 (Johnson).
         private const string PoemText =
             "Hope is the thing with feathers\n"
