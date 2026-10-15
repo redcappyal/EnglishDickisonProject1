@@ -30,7 +30,7 @@ namespace FlappyBird
             public string Before, After;
             public string[] Words;
             public int Right;
-            public float FilledAt = -1;
+            public float ShownAt = Time.time, FilledAt = -1, PassedAt = -1;
         }
 
         // A giant quill that slides in at the edge, charges, and fires a beam straight across.
@@ -40,9 +40,31 @@ namespace FlappyBird
             public bool FromLeft, Charged, Fired;
         }
 
-        private const float QuillIn = 0.35f, QuillCharge = 0.6f, QuillFire = 0.45f, QuillOut = 0.3f, BeamHalf = 0.42f;
-        private const float BirdRadius = 0.19f, Invulnerable = 1.2f, HopePerHit = 8, CharsPerSecond = 26;
-        private const float ColumnHalf = 0.5f, WindowHalf = 0.72f, WaveSpeed = 4.5f, WaveGrace = 1.2f;
+        private const float QuillIn = 0.35f, QuillFire = 0.45f, QuillOut = 0.3f, BeamHalf = 0.42f;
+        private const float BirdRadius = 0.19f, Invulnerable = 1.2f, CharsPerSecond = 26;
+        private const float ColumnHalf = 0.5f, WindowHalf = 0.72f, WaveIn = 0.9f, WaveGrace = 1.2f, WaveOut = 0.8f;
+        private const float TurnSweep = 0.45f;
+
+        // A Wave's shape. Its vertical speed always matches its scroll speed, so it flies at 45 degrees.
+        // Each style is built from its own fixed seed, so a Wave is the same tunnel every time you
+        // play it - learn it, like a level.
+        private struct WaveStyle
+        {
+            public int Seed;
+            public float Seconds, StartHalf, EndHalf, StartSpeed, EndSpeed, MinRun, MaxRun, Flats;
+        }
+
+        // The first Wave is a warm-up; the one in her Letter is built like an easy demon level:
+        // narrow, fast and speeding up, with short runs and the odd flat stretch you have to tap through.
+        private static readonly WaveStyle FirstWave = new WaveStyle
+            { Seed = 1830, Seconds = 20, StartHalf = 1.3f, EndHalf = 0.95f, StartSpeed = 4.5f, EndSpeed = 4.5f, MinRun = 0.8f, MaxRun = 2.2f };
+        private static readonly WaveStyle DemonWave = new WaveStyle
+            { Seed = 1886, Seconds = 24, StartHalf = 0.7f, EndHalf = 0.55f, StartSpeed = 5.8f, EndSpeed = 7.2f, MinRun = 0.8f, MaxRun = 1.8f, Flats = 0.1f };
+        private static readonly WaveStyle EasyWave = new WaveStyle
+            { Seed = 1861, Seconds = 20, StartHalf = 1.6f, EndHalf = 1.35f, StartSpeed = 3.8f, EndSpeed = 3.8f, MinRun = 1f, MaxRun = 2.4f };
+        private static readonly WaveStyle EasyLetterWave = new WaveStyle
+            { Seed = 1890, Seconds = 18, StartHalf = 1.3f, EndHalf = 1.1f, StartSpeed = 4.5f, EndSpeed = 5f, MinRun = 0.9f, MaxRun = 2f };
+        private const float WaveStartY = 0.3f; // the height the bird is set back to between attacks
         private const float Pixel = 2 / PixelArt.PixelsPerUnit; // she's drawn at twice the usual scale
         // The blanks: the line around the missing word, the right word, then two that don't belong.
         private static readonly string[][] BlankLines = {
@@ -55,7 +77,7 @@ namespace FlappyBird
         private static readonly string[] LastLine = { "AND NEVER STOPS - AT", "-", "ALL", "ONCE", "LAST" };
         private static readonly Color Ink = new Color(0.23f, 0.14f, 0.09f), Glow = new Color(0.55f, 0.92f, 1f);
         private static readonly Color Gold = new Color(1f, 0.85f, 0.45f), Page = new Color(0.95f, 0.9f, 0.78f);
-        private static readonly Color Thread = new Color(0.75f, 0.2f, 0.2f), Rock = new Color(0.1f, 0.06f, 0.2f), Night = new Color(0.01f, 0.008f, 0.025f); // GUI colours are linear: this reads as deep night
+        private static readonly Color Thread = new Color(0.75f, 0.2f, 0.2f), Night = new Color(0.01f, 0.008f, 0.025f); // GUI colours are linear: this reads as deep night
 
         private FlappyBirdGame game;
         private DickinsonMusic music;
@@ -69,31 +91,20 @@ namespace FlappyBird
         private readonly List<Vector2> path = new List<Vector2>(), trail = new List<Vector2>();
         private bool waving;
         private float waveScroll, waveHalf, waveStart, waveY;
-        private string hint;
-        private float hintUntil = -10;
+        private float waveSpeed, waveOpen, waveLength;
+        // Easy mode (Settings) is read when the fight starts: gentler gates, slower beams, wider tunnels.
+        private bool easy;
+        private float quillCharge = 0.6f;
+        // The page turn between attacks.
+        private string turnTitle, turnNote;
+        private float turnAt = -10, turnHold;
 
         // Talking: the bird hovers. Fighting: the bird flies under its own wings.
         private bool hovering, fighting, attacking, sleeping, waitingToPerch, perching, advance;
         private string line;
         private readonly List<string> lineRows = new List<string>();
-        private float lineStart, hurtUntil = -10, cutUntil = -10, eyeAt = -10, dawnAt = -10;
+        private float lineStart, hurtUntil = -10, cutUntil = -10, eyeAt = -10, dawnAt = -10, creditsAt = -10, creditsEnd = -10;
         private int blips;
-        private float creditsAt = -10, creditsEnd = -10;
-
-        // The end credits, rolling up over the dawn. (text, size, colour: 0 white, 1 gold, 2 muted; null = a gap)
-        private static readonly (string Text, float Size, int Tone)[] CreditLines = {
-            ("THE THING WITH FEATHERS", 5, 1), (null, 0, 0),
-            ("A GAME BY", 2, 2), ("ALVIN, SHRIDHAR AND ISHAAN", 3, 0), (null, 0, 0),
-            ("THE POEM", 2, 2), ("\"HOPE\" IS THE THING WITH FEATHERS", 3, 0), ("BY EMILY DICKINSON (1830 - 1886)", 2, 0), (null, 0, 0),
-            ("STARRING", 2, 2), ("THE BIRD - AS HOPE", 3, 0), ("EMILY DICKINSON - AS HERSELF", 3, 0), (null, 0, 0),
-            ("THE WORLDS", 2, 2), ("HOPE - THE GALE - WARMTH - EXTREMITY", 3, 0), (null, 0, 0),
-            ("ART, MUSIC AND SOUND", 2, 2), ("PIXEL ART AND SYNTHESIZED MUSIC, ALL MADE IN CODE", 2, 0), (null, 0, 0),
-            ("INSPIRED BY", 2, 2), ("FLAPPY BIRD BY DONG NGUYEN", 2, 0), ("UNDERTALE BY TOBY FOX", 2, 0), (null, 0, 0),
-            ("POEM TEXT", 2, 2), ("PUBLIC DOMAIN, VIA THE ACADEMY OF AMERICAN POETS", 2, 0), (null, 0, 0),
-            ("MADE WITH UNITY 6 FOR HONORS AMERICAN LITERATURE", 2, 2), (null, 0, 0), (null, 0, 0),
-            ("AND NEVER STOPS - AT ALL", 4, 1)
-        };
-        private const float CreditsSpeed = 55, CreditsGap = 30, CreditsHold = 3;
 
         public bool Active { get; private set; }
         // The bird sits on her shoulder at the very end.
@@ -131,6 +142,8 @@ namespace FlappyBird
         public void Begin()
         {
             ResetBoss();
+            easy = game.EasyMode;
+            quillCharge = easy ? 0.9f : 0.6f;
             Active = hovering = true;
             game.BeginHover();
             music.Silence();
@@ -143,7 +156,7 @@ namespace FlappyBird
             Active = Perched = hovering = fighting = attacking = sleeping = waitingToPerch = perching = advance = false;
             ClearAttacks();
             line = null;
-            hurtUntil = cutUntil = eyeAt = dawnAt = creditsAt = creditsEnd = hintUntil = -10;
+            hurtUntil = cutUntil = eyeAt = dawnAt = creditsAt = creditsEnd = turnAt = -10;
             art.enabled = false;
             art.sprite = idle;
         }
@@ -177,41 +190,41 @@ namespace FlappyBird
             eyeAt = Time.time;
             yield return Say("let's find out.");
 
-            yield return Cut(0.25f);
-            music.SetLevel(DickinsonMusic.BossTheme);
-            hovering = false;
-            fighting = true;
-            game.RestoreHope(100);
-            game.Bird.Flap();
             // 1. Fascicles: she sewed her poems into little books by hand.
+            yield return Turn("I - FASCICLES", "WAIT FOR THE PAGES TO OPEN");
+            music.SetLevel(DickinsonMusic.BossTheme);
+            fighting = true;
+            hovering = false;
+            game.Bird.Flap();
+            game.RestoreHope(100);
             yield return Talk("i sewed these - by hand - you know -");
-            Hint("WAIT FOR THE PAGES TO OPEN");
-            yield return Attack(Fascicles(12, 4.2f, 1.6f));
+            yield return Attack(Fascicles(12, easy ? 3.6f : 4.2f, easy ? 1.9f : 1.6f));
             yield return Talk("not bad - for a Bird -");
             // 2. Blanks: the poem, with a word missing.
             yield return Talk("let's see - if you know - the Words -");
-            Hint("FLY THROUGH THE RIGHT WORD");
-            yield return Attack(Blanks(3.6f));
+            yield return Turn("II - BLANKS", "FLY THROUGH THE RIGHT WORD");
+            yield return Attack(Blanks(easy ? 3f : 3.6f));
             yield return Talk("hm - you do - know them -");
             // 3. The Wave: a slanted tunnel.
             yield return Talk("tell all the truth - but tell it - Slant -");
-            yield return Cut(0.3f);
-            yield return Attack(Wave(14, 1.3f, 0.95f));
-            yield return Cut(0.3f);
+            yield return Turn("III - THE WAVE", "HOLD TO RISE - LET GO TO FALL");
+            yield return Attack(Wave(easy ? EasyWave : FirstWave));
             // 4. Quills.
             yield return Talk("this next one - is a real - Page-turner -");
-            yield return Attack(Quills(10, 0.75f));
-            // 5. Her Letter to the World: everything at once, in quick black cuts, and then the
+            yield return Turn("IV - QUILLS", "KEEP OUT OF THE LIGHT");
+            yield return Attack(Quills(10, easy ? 1.2f : 0.75f));
+            // 5. Her Letter to the World: everything at once, pages flipping between, and then the
             // last line - the one the whole game argues.
             yield return Talk("alright. this is my Letter - to the World -");
-            yield return Cut(0.15f);
-            yield return Attack(Fascicles(5.5f, 5.2f, 1.15f), Quills(5.5f, 1.4f));
-            yield return Cut(0.2f);
-            yield return Attack(Wave(7, 1.05f, 0.85f));
-            yield return Cut(0.2f);
-            yield return Attack(Quills(4, 0.45f));
+            yield return Turn("V - MY LETTER TO THE WORLD", "EVERYTHING AT ONCE");
+            yield return Attack(Fascicles(easy ? 5 : 6, easy ? 4.2f : 5.2f, easy ? 1.6f : 1.15f), Quills(easy ? 5 : 6, easy ? 2.2f : 1.4f));
+            yield return Turn(null, null, 0.15f);
+            yield return Attack(Wave(easy ? EasyLetterWave : DemonWave));
+            yield return Turn(null, null, 0.15f);
+            yield return Attack(Quills(easy ? 3 : 4, easy ? 0.8f : 0.45f));
             yield return Talk("finish it - for me -");
-            yield return Attack(OneBlank(LastLine, 3.4f));
+            yield return Turn(null, null, 0.15f);
+            yield return Attack(OneBlank(LastLine, easy ? 3f : 3.4f));
             music.Silence();
             eyeAt = -10; // the glow goes out of her eye
             yield return Wait(1.2f);
@@ -246,7 +259,7 @@ namespace FlappyBird
             sfx.Play(Sfx.Win);
             dawnAt = Time.time;
             yield return Wait(2.5f);
-            yield return Credits();
+            yield return RollCredits();
             game.FinishBoss();
         }
 
@@ -265,10 +278,24 @@ namespace FlappyBird
             yield return Wait(seconds);
         }
 
-        private void Hint(string text)
+        // Between attacks the page turns: ink sweeps in from the right with the next attack's name on
+        // it, the bird is set gently back in the middle underneath, and the ink sweeps on out to the
+        // left as the next attack begins. A turn with no title is a quick flip.
+        private IEnumerator Turn(string title, string note, float hold = 0.8f)
         {
-            hint = text;
-            hintUntil = Time.time + 3.5f;
+            // Let what's left of the last attack fly off first.
+            for (float t = 0; t < 1.5f && (columns.Count > 0 || quills.Count > 0); t += Time.deltaTime) yield return null;
+            turnTitle = title;
+            turnNote = note;
+            turnAt = Time.time;
+            turnHold = hold;
+            sfx.Play(Sfx.Gust, 0.45f, 1.3f);
+            yield return Wait(TurnSweep);
+            columns.Clear();
+            quills.Clear();
+            if (fighting && !hovering) { hovering = true; game.BeginHover(); }
+            yield return Wait(hold);
+            if (fighting) { hovering = false; game.Bird.Flap(); }
         }
 
         private void ShowLine(string text)
@@ -395,21 +422,25 @@ namespace FlappyBird
         }
 
         // The Wave, after Geometry Dash: hold to fly up at a slant, let go to fly down, through a
-        // zigzag tunnel that narrows as it goes. The bird leaves a trail.
-        private IEnumerator Wave(float seconds, float startHalf, float endHalf)
+        // zigzag tunnel that narrows as it goes. The walls close in at the start and open out at the end.
+        private IEnumerator Wave(WaveStyle style)
         {
             game.BeginHover();
             waving = true;
             waveStart = Time.time;
             waveScroll = 0;
-            waveHalf = startHalf;
-            waveY = Mathf.Clamp(BirdY, Floor + 1.7f, Top - 1.7f);
+            waveOpen = 1;
+            waveLength = style.Seconds;
+            waveY = BirdY;
             trail.Clear();
-            BuildTunnel(waveY, seconds * WaveSpeed + 2 * Right + 4);
-            Hint("HOLD TO RISE - LET GO TO FALL");
-            for (float t = 0; t < seconds; t += Time.deltaTime)
+            BuildTunnel(style.Seconds * Mathf.Max(style.StartSpeed, style.EndSpeed) + 2 * Right + 6, style);
+            for (float t = 0; t < style.Seconds; t += Time.deltaTime)
             {
-                waveHalf = Mathf.Lerp(startHalf, endHalf, t / seconds);
+                float f = t / style.Seconds;
+                waveHalf = Mathf.Lerp(style.StartHalf, style.EndHalf, f);
+                waveSpeed = Mathf.Lerp(style.StartSpeed, style.EndSpeed, f);
+                waveOpen = t < WaveIn ? 1 - Mathf.SmoothStep(0, 1, t / WaveIn)
+                    : Mathf.SmoothStep(0, 1, (t - (style.Seconds - WaveOut)) / WaveOut);
                 yield return null;
             }
             waving = false;
@@ -418,23 +449,32 @@ namespace FlappyBird
             game.Bird.Flap();
         }
 
-        // A straight run-up, then diagonals at the wave's own slope, kept clear of the floor and sky.
-        private void BuildTunnel(float y, float length)
+        // A straight run-up, then diagonals at the wave's own slope (and, in harder waves, the odd
+        // flat stretch), kept clear of the floor and the sky.
+        private void BuildTunnel(float length, WaveStyle style)
         {
+            var random = new System.Random(style.Seed);
+            float Roll(float min, float max) => min + (float)random.NextDouble() * (max - min);
             path.Clear();
-            float low = Floor + 1.7f, high = Top - 1.7f, s = WaveGrace * WaveSpeed + 2;
+            float low = Floor + 1.7f, high = Top - 1.7f, y = WaveStartY, s = WaveGrace * style.StartSpeed + 2;
             path.Add(new Vector2(-30, y));
             path.Add(new Vector2(s, y));
-            int dir = Random.value < 0.5f ? 1 : -1;
+            int dir = 1;
             while (s < length)
             {
+                if (Roll(0, 1) < style.Flats)
+                {
+                    s += Roll(0.5f, 0.9f);
+                    path.Add(new Vector2(s, y));
+                    continue;
+                }
                 float room = dir > 0 ? high - y : y - low;
                 if (room < 0.6f) { dir = -dir; continue; }
-                float run = Mathf.Min(Random.Range(0.8f, 2.2f), room);
+                float run = Mathf.Min(Roll(style.MinRun, style.MaxRun), room);
                 s += run;
                 y += dir * run;
                 path.Add(new Vector2(s, y));
-                if (Random.value < 0.8f) dir = -dir; // mostly zigzag, sometimes a longer climb or dive
+                if (Roll(0, 1) < 0.8f) dir = -dir; // mostly zigzag, sometimes a longer climb or dive
             }
             path.Add(new Vector2(s + 30, y));
         }
@@ -510,7 +550,7 @@ namespace FlappyBird
             UpdateColumns(dt);
             UpdateQuills();
             if (waving) UpdateWave(dt);
-            else if (fighting)
+            else if (fighting && !hovering)
             {
                 // The edges of the sky sting too, and bounce the bird back.
                 if (BirdY > Top - 0.25f || BirdY < Floor + 0.27f) Hurt(true);
@@ -520,8 +560,8 @@ namespace FlappyBird
         // A flap: a wingbeat in the fight, otherwise it moves the talking along.
         private void OnFlap()
         {
-            if (fighting) { if (!waving) game.Bird.Flap(game.Energy > 0 ? 1 : 0.8f); }
-            else advance = true;
+            if (!fighting) advance = true;
+            else if (!waving && !hovering) game.Bird.Flap(game.Energy > 0 ? 1 : 0.8f);
         }
 
         private void UpdateColumns(float dt)
@@ -530,7 +570,7 @@ namespace FlappyBird
             {
                 Column column = columns[i];
                 column.X -= column.Speed * dt;
-                if (column.Fascicle) column.Half[0] = Mathf.Lerp(0.15f, 1.3f, Openness(column.Phase));
+                if (column.Fascicle) column.Half[0] = Mathf.Lerp(easy ? 0.55f : 0.15f, 1.3f, Openness(column.Phase));
                 else if (!column.Inked && column.X - BirdX < column.Speed * 0.55f)
                 {
                     // She strikes out the wrong words just before the bird gets there.
@@ -539,7 +579,7 @@ namespace FlappyBird
                     game.Shake(0.08f);
                 }
                 if (column.X < -Right - 2) { columns.RemoveAt(i); continue; }
-                if (!fighting) continue;
+                if (!fighting || hovering) continue;
                 if (Mathf.Abs(BirdX - column.X) < ColumnHalf + BirdRadius)
                 {
                     bool clear = false;
@@ -551,6 +591,7 @@ namespace FlappyBird
                 if (!column.Passed && column.X + ColumnHalf < BirdX - BirdRadius)
                 {
                     column.Passed = true;
+                    if (column.Blank != null) column.Blank.PassedAt = Time.time;
                     if (column.Blank != null && Nearest(column) == column.Blank.Right)
                     {
                         // The right word drops into the line, as a note.
@@ -572,14 +613,17 @@ namespace FlappyBird
 
         private void UpdateWave(float dt)
         {
-            waveScroll += WaveSpeed * dt;
+            waveScroll += waveSpeed * dt;
             bool ready = Time.time - waveStart > WaveGrace;
             bool rising = FlappyBirdGame.FlapHeld();
-            if (ready) waveY += (rising ? WaveSpeed : -WaveSpeed) * dt;
-            float centre = TunnelCentre(waveScroll), room = waveHalf - BirdRadius;
+            if (ready) waveY += (rising ? waveSpeed : -waveSpeed) * dt;
+            else waveY = Mathf.MoveTowards(waveY, WaveStartY, 3 * dt); // settle onto the tunnel's start
+            // While the walls are still closing in (or opening out) they can't hurt, only guide.
+            float centre = TunnelCentre(waveScroll), room = waveHalf + waveOpen * 8 - BirdRadius;
+            waveY = Mathf.Clamp(waveY, Floor + 0.4f, Top - 0.4f);
             if (Mathf.Abs(waveY - centre) > room)
             {
-                if (ready) Hurt(false);
+                if (ready && waveOpen <= 0) Hurt(false);
                 waveY = Mathf.Clamp(waveY, centre - room, centre + room);
             }
             Transform bird = game.Bird.transform;
@@ -595,21 +639,21 @@ namespace FlappyBird
                 Quill quill = quills[i];
                 float age = Time.time - quill.Born;
                 if (!quill.Charged && age >= QuillIn) { quill.Charged = true; sfx.Play(Sfx.Charge, 0.5f); }
-                if (!quill.Fired && age >= QuillIn + QuillCharge) { quill.Fired = true; sfx.Play(Sfx.Beam, 0.6f); game.Shake(0.1f); }
-                bool firing = age >= QuillIn + QuillCharge && age < QuillIn + QuillCharge + QuillFire;
-                if (firing && fighting && Mathf.Abs(BirdY - quill.Y) < BeamHalf + BirdRadius) Hurt(false);
-                if (age > QuillIn + QuillCharge + QuillFire + QuillOut) quills.RemoveAt(i);
+                if (!quill.Fired && age >= QuillIn + quillCharge) { quill.Fired = true; sfx.Play(Sfx.Beam, 0.6f); game.Shake(0.1f); }
+                bool firing = age >= QuillIn + quillCharge && age < QuillIn + quillCharge + QuillFire;
+                if (firing && fighting && !hovering && Mathf.Abs(BirdY - quill.Y) < BeamHalf + BirdRadius) Hurt(false);
+                if (age > QuillIn + quillCharge + QuillFire + QuillOut) quills.RemoveAt(i);
             }
         }
 
         // A hit costs hope and counts as a crash, then the bird flickers, safe, for a moment.
         public void Hurt(bool surface)
         {
-            if (!fighting) return;
+            if (!fighting || hovering) return;
             if (surface) game.Bird.Bounce(BirdY < 0 ? 5.5f : -4.5f);
             if (Time.time < hurtUntil) return;
             hurtUntil = Time.time + Invulnerable;
-            game.Wound(HopePerHit);
+            game.Wound(easy ? 4 : 8);
             sfx.Play(Sfx.Hurt);
         }
 
@@ -647,15 +691,13 @@ namespace FlappyBird
                     PixelUi.Text("Z", head.x - 30 - rise * 40, head.y - 60 - rise * 70, 2 + Mathf.Round(rise * 2), new Color(1, 1, 1, 1 - rise), 0.5f);
                 }
             if (line != null) DrawBubble(width, head);
-            DrawCredits(width, now);
+            if (creditsAt > 0) Credits.Draw(width, now - creditsAt, HudHide);
             if (waitingToPerch && Mathf.Repeat(now, 1.1f) < 0.8f)
                 PixelUi.Text("SPACE OR CLICK - FLY TO HER", width / 2, 520, 3, Color.white, 0.5f);
-            if (now < hintUntil && fighting)
-            {
-                float a = Mathf.Clamp01((hintUntil - now) / 0.5f);
-                PixelUi.Text(hint, width / 2, 690, 2, new Color(1, 1, 1, a), 0.5f);
-            }
-            if (now < cutUntil) PixelUi.Fill(new Rect(0, 0, width, 800), Color.black);
+            DrawTurn(width, now);
+            // A cut snaps to black and fades back.
+            float black = now < cutUntil ? 1 : 1 - (now - cutUntil) / 0.35f;
+            if (black > 0) PixelUi.Fill(new Rect(0, 0, width, 800), new Color(0, 0, 0, black));
         }
 
         // A column in the HUD's space: stitched manuscript pages, or an ink wall with word windows.
@@ -721,6 +763,11 @@ namespace FlappyBird
             boxWidth += 18;
             float before = PixelUi.TextWidth(blank.Before, size), after = PixelUi.TextWidth(blank.After, size);
             float total = before + 12 + boxWidth + 12 + after;
+            // Fades in as the wall appears, and out once the bird is through.
+            float alpha = Mathf.Clamp01((Time.time - blank.ShownAt) / 0.3f);
+            if (blank.PassedAt > 0) alpha *= Mathf.Clamp01(1 - (Time.time - blank.PassedAt - 0.8f) / 0.3f);
+            Color previous = GUI.color;
+            GUI.color = new Color(1, 1, 1, alpha * previous.a);
             Rect panel = new Rect(Mathf.Round((width - total) / 2 - 24), 96, total + 48, 48);
             PixelUi.Frame(panel, "panel");
             float x = panel.x + 24, y = panel.y + 16;
@@ -731,33 +778,46 @@ namespace FlappyBird
             else if (Mathf.Repeat(Time.time, 0.8f) < 0.55f)
                 PixelUi.Fill(new Rect(x, y + 15 + 3, boxWidth, 3), Gold);
             PixelUi.Text(blank.After, x + boxWidth + 12, y, size, Color.white);
+            GUI.color = previous;
         }
 
-        // The Wave's tunnel: night-ink walls with saw-tooth gold edges, and the bird's trail.
+        // The Wave's tunnel, Geometry Dash style: walls of blocks that scroll with the tunnel,
+        // saw-tooth neon edges that glow brighter on every beat, the bird's trail, and a progress
+        // bar across the top so you can learn it.
         private void DrawWave(float width)
         {
             const float step = 6;
-            float birdX = BirdX;
+            float birdX = BirdX, scrollPx = waveScroll * 80;
+            float pulse = 1 - Mathf.Repeat(music.SongTime, music.BeatLength) / music.BeatLength;
+            Color glow = new Color(Gold.r, Gold.g, Gold.b, 0.15f + 0.25f * pulse);
             for (float ux = 0; ux < width; ux += step)
             {
                 float wx = (ux / width * 2 - 1) * Right;
                 float s = waveScroll + (wx - birdX);
+                float half = waveHalf + waveOpen * 8 + Mathf.Abs(Mathf.Repeat(s * 3, 1) - 0.5f) * 0.24f;
                 float centre = TunnelCentre(s);
-                float tooth = Mathf.Abs(Mathf.Repeat(s * 3, 1) - 0.5f) * 0.24f;
-                float upper = game.ToUi(new Vector2(wx, centre + waveHalf + tooth)).y;
-                float lower = game.ToUi(new Vector2(wx, centre - waveHalf - tooth)).y;
+                float upper = Mathf.Round(game.ToUi(new Vector2(wx, centre + half)).y), lower = Mathf.Round(game.ToUi(new Vector2(wx, centre - half)).y);
                 // One unit of overlap, so the columns never leave seams between them.
-                PixelUi.Fill(new Rect(ux, 0, step + 1, Mathf.Round(upper)), Rock);
-                PixelUi.Fill(new Rect(ux, Mathf.Round(upper) - 3, step + 1, 3), Gold);
-                PixelUi.Fill(new Rect(ux, Mathf.Round(lower), step + 1, 800 - Mathf.Round(lower)), Rock);
-                PixelUi.Fill(new Rect(ux, Mathf.Round(lower), step + 1, 3), Gold);
+                PixelUi.Pattern(new Rect(ux, 0, step + 1, upper), "wave_block", new Vector2(scrollPx, 0));
+                PixelUi.Pattern(new Rect(ux, lower, step + 1, 800 - lower), "wave_block", new Vector2(scrollPx, 0));
+                PixelUi.Fill(new Rect(ux, upper, step + 1, 9), glow);
+                PixelUi.Fill(new Rect(ux, lower - 9, step + 1, 9), glow);
+                PixelUi.Fill(new Rect(ux, upper - 3, step + 1, 3), Gold);
+                PixelUi.Fill(new Rect(ux, lower, step + 1, 3), Gold);
             }
             for (int i = 0; i < trail.Count; i++)
             {
                 Vector2 point = game.ToUi(new Vector2(birdX + trail[i].x - waveScroll, trail[i].y));
-                float age = (waveScroll - trail[i].x) / 5;
-                PixelUi.Fill(new Rect(Mathf.Round(point.x / 3) * 3 - 3, Mathf.Round(point.y / 3) * 3 - 3, 6, 6), new Color(Glow.r, Glow.g, Glow.b, 0.8f * (1 - age)));
+                float fade = 1 - (waveScroll - trail[i].x) / 5;
+                float x = Mathf.Round(point.x / 3) * 3, y = Mathf.Round(point.y / 3) * 3;
+                PixelUi.Fill(new Rect(x - 4.5f, y - 4.5f, 9, 9), new Color(Glow.r, Glow.g, Glow.b, 0.35f * fade));
+                PixelUi.Fill(new Rect(x - 1.5f, y - 1.5f, 3, 3), new Color(1, 1, 1, 0.9f * fade));
             }
+            float progress = Mathf.Clamp01((Time.time - waveStart) / waveLength);
+            Rect bar = new Rect(Mathf.Round(width / 2 - 160), 104, 320, 24);
+            PixelUi.Frame(bar, "bar");
+            PixelUi.Fill(new Rect(bar.x + 9, bar.y + 9, Mathf.Round((bar.width - 18) * progress / 3) * 3, 6), Gold);
+            PixelUi.Text(Mathf.FloorToInt(progress * 100).ToString(), bar.xMax + 12, bar.y + 5, 2, Color.white);
         }
 
         private void DrawQuills(float width, float now)
@@ -767,15 +827,15 @@ namespace FlappyBird
             foreach (Quill quill in quills)
             {
                 float age = now - quill.Born;
-                float leave = age - (QuillIn + QuillCharge + QuillFire);
+                float leave = age - (QuillIn + quillCharge + QuillFire);
                 float slide = leave > 0 ? 1 - leave / QuillOut : Mathf.Clamp01(age / QuillIn);
                 slide = Mathf.SmoothStep(0, 1, slide);
                 float y = game.ToUi(new Vector2(0, quill.Y)).y;
                 // The quill's back stays at the screen edge; its nib points across the sky.
                 float x = quill.FromLeft ? -size.x + (size.x - 12) * slide : width - (size.x - 12) * slide;
                 float nib = quill.FromLeft ? x + size.x : x;
-                bool charging = age >= QuillIn && age < QuillIn + QuillCharge;
-                bool firing = age >= QuillIn + QuillCharge && leave < 0;
+                bool charging = age >= QuillIn && age < QuillIn + quillCharge;
+                bool firing = age >= QuillIn + quillCharge && leave < 0;
                 if (charging && Mathf.Repeat(now * 14, 1) < 0.6f)
                 {
                     Rect warn = quill.FromLeft ? Rect.MinMaxRect(nib, y - 1.5f, width, y + 1.5f) : Rect.MinMaxRect(0, y - 1.5f, nib, y + 1.5f);
@@ -784,7 +844,7 @@ namespace FlappyBird
                 if (firing)
                 {
                     // The beam narrows as it fades out.
-                    float half = BeamHalf * 80 * Mathf.Clamp01((QuillIn + QuillCharge + QuillFire - age) / 0.15f);
+                    float half = BeamHalf * 80 * Mathf.Clamp01((QuillIn + quillCharge + QuillFire - age) / 0.15f);
                     float a = quill.FromLeft ? nib : 0, b = quill.FromLeft ? width : nib;
                     PixelUi.Fill(Rect.MinMaxRect(a, Mathf.Round(y - half), b, Mathf.Round(y + half)), new Color(Gold.r, Gold.g, Gold.b, 0.9f));
                     PixelUi.Fill(Rect.MinMaxRect(a, Mathf.Round(y - half * 0.55f), b, Mathf.Round(y + half * 0.55f)), Color.white);
@@ -816,45 +876,39 @@ namespace FlappyBird
             }
         }
 
-        // The credits roll until the last line reaches the middle of the screen and rests there.
-        // Space or a click skips them.
-        private IEnumerator Credits()
+        // The credits roll over the dawn; Space or a click skips them.
+        private IEnumerator RollCredits()
         {
             creditsAt = Time.time;
             creditsEnd = -10;
             advance = false;
-            float duration = (800 + CreditLines.Length * CreditsGap - 380) / CreditsSpeed + CreditsHold;
-            while (Time.time - creditsAt < duration && !advance) yield return null;
+            while (Time.time - creditsAt < Credits.Duration && !advance) yield return null;
             creditsEnd = Time.time;
             yield return Wait(0.5f);
             creditsAt = creditsEnd = -10;
         }
 
-        private void DrawCredits(float width, float now)
+        // The page turn: an ink page with a ragged, gold-ruled edge slides in from the right, holds,
+        // and slides on out to the left, carrying the next attack's name.
+        private void DrawTurn(float width, float now)
         {
-            if (creditsAt < 0) return;
-            float alpha = HudHide;
-            Color previous = GUI.color;
-            GUI.color = new Color(1, 1, 1, alpha);
-            // A soft dark column behind the text, so it reads over the dawn.
-            PixelUi.Fill(new Rect(Mathf.Round(width / 2 - 330), 0, 660, 800), new Color(0.04f, 0.03f, 0.08f, 0.35f));
-            float scroll = (now - creditsAt) * CreditsSpeed;
-            float last = 800 + (CreditLines.Length - 1) * CreditsGap;
-            scroll = Mathf.Min(scroll, last - 380); // the last line comes to rest in the middle
-            Color[] tones = { Color.white, Gold, new Color(0.86f, 0.82f, 0.9f) };
-            for (int i = 0; i < CreditLines.Length; i++)
+            float t = now - turnAt;
+            if (turnAt < 0 || t > 2 * TurnSweep + turnHold) return;
+            float cover = Mathf.SmoothStep(0, 1, t / TurnSweep), leave = Mathf.SmoothStep(0, 1, (t - TurnSweep - turnHold) / TurnSweep);
+            float left = width * (1 - cover) - (width + 60) * leave, right = left + width + 60;
+            for (int row = 0; row * 12 < 800; row++)
             {
-                var (text, size, tone) = CreditLines[i];
-                if (text == null) continue;
-                float y = 800 + i * CreditsGap - scroll;
-                if (y < 90 || y > 800) continue;
-                // Lines fade in at the bottom and out at the top.
-                float edge = Mathf.Clamp01((y - 90) / 80) * Mathf.Clamp01((800 - y) / 80);
-                Color color = tones[tone];
-                color.a = edge;
-                PixelUi.Text(text, width / 2, y, size, color, 0.5f);
+                float ragged = Mathf.Round(Mathf.Sin(row * 1.7f) * 2 + Mathf.Sin(row * 0.6f) * 3) * 3;
+                float a = Mathf.Max(0, left + ragged), b = Mathf.Min(width, right + ragged);
+                if (b <= a) continue;
+                PixelUi.Fill(new Rect(a, row * 12, b - a, 12), Night);
+                if (a > 0) PixelUi.Fill(new Rect(a, row * 12, 3, 12), Gold);
+                if (b < width) PixelUi.Fill(new Rect(b - 3, row * 12, 3, 12), Gold);
             }
-            GUI.color = previous;
+            if (turnTitle == null) return;
+            float centre = (left + right - 60) / 2;
+            PixelUi.Text(turnTitle, centre, 350, 5, Gold, 0.5f);
+            PixelUi.Text(turnNote, centre, 410, 2, new Color(0.86f, 0.82f, 0.9f), 0.5f);
         }
 
         // Once she smiles, dawn comes up over the frozen sea: warm bands strongest at the horizon.

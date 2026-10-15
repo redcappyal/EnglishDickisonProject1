@@ -556,9 +556,11 @@ def scuff(img, salt, shape=True, tint=0.05):
 
 # Tiling art keeps its exact shape so its seams still line up.
 TILES = ("background", "ground", "pipe_top", "pipe_bottom", "panel", "parchment", "bar", "button", "button_hover",
-         "screen_frame", "branch", "tree_trunk")
+         "screen_frame", "wave_block")
 # 9-slice UI frames stretch their middle, so a single off pixel there would become a big block.
-STRETCHED = ("panel", "parchment", "bar", "button", "button_hover", "screen_frame")
+STRETCHED = ("panel", "parchment", "bar", "button", "button_hover", "screen_frame", "wave_block")
+# v1.8: the big pieces are drawn at half resolution (chunkier pixels), as if painted with a bigger brush.
+CHUNKY = ("background", "tree_0", "tree_1", "tree_2", "crown_0", "crown_1", "crown_2", "storm_cloud")
 
 
 def worsen(img, salt, tiles, stretched=False):
@@ -598,6 +600,33 @@ def worsen(img, salt, tiles, stretched=False):
     return img
 
 
+def cheapen(img, salt, stem):
+    """v1.8: the look of three students and a weekend. A smaller palette (each sprite keeps just
+    its dozen or so main colours), chunkier pixels on the big pieces, and the odd gap in an outline."""
+    img = img.copy()
+    w, h = img.size
+    if stem in CHUNKY and w % 2 == 0:
+        px = img.load()
+        for y in range(0, h, 2):
+            for x in range(0, w, 2):
+                col = px[x, y]
+                for dx, dy in ((1, 0), (0, 1), (1, 1)):
+                    if x + dx < w and y + dy < h:
+                        px[x + dx, y + dy] = col
+    alpha = img.getchannel("A")
+    colours = 10 if stem in CHUNKY else 12
+    flat = img.convert("RGB").quantize(colors=colours, method=Image.MEDIANCUT, dither=Image.NONE).convert("RGB")
+    img = Image.merge("RGBA", (*flat.split(), alpha))
+    if stem not in TILES:
+        px = img.load()
+        gaps = [(x, y) for y in range(h) for x in range(w)
+                if px[x, y][3] and sum(px[x, y][:3]) < 150 and _noise(x, y, salt + 11) < 0.06
+                and any(0 <= x + dx < w and 0 <= y + dy < h and px[x + dx, y + dy][3] == 0 for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))]
+        for x, y in gaps:
+            px[x, y] = CLEAR
+    return img
+
+
 def worsen_all(folder):
     """Runs worsen() over every PNG the game loads (the font is drawn in code and stays crisp)."""
     for root, _, files in os.walk(folder):
@@ -607,7 +636,8 @@ def worsen_all(folder):
             path = os.path.join(root, name)
             stem = name[:-4]
             salt = sum(ord(ch) for ch in os.path.relpath(path, folder))
-            worsen(Image.open(path).convert("RGBA"), salt, stem in TILES, stem in STRETCHED).save(path)
+            img = worsen(Image.open(path).convert("RGBA"), salt, stem in TILES, stem in STRETCHED)
+            (img if stem in STRETCHED else cheapen(img, salt, stem)).save(path)
 
 
 # ------------------------------------------------------------------ UI + props
@@ -686,26 +716,41 @@ def heart():
     ], {"R": c("#e8403a"), "W": c("#ffd0c8"), "D": c("#a82828")}))
 
 
-def speaker(on):
-    """Sound on (waves) or off (a cross)."""
-    rows = [
-        "...#.....",
-        "..##..#..",
-        "####...#.",
-        "####.#.#.",
-        "####...#.",
-        "..##..#..",
-        "...#.....",
-    ] if on else [
-        "...#.....",
-        "..##.....",
-        "####.#.#.",
-        "####..#..",
-        "####.#.#.",
-        "..##.....",
-        "...#.....",
-    ]
-    return draw_map(rows, {"#": c("#3a1f0d")})
+def gear():
+    """The settings button: a cog."""
+    return draw_map([
+        "...#.#...",
+        ".#.###.#.",
+        "..#####..",
+        "####.####",
+        "###...###",
+        "####.####",
+        "..#####..",
+        ".#.###.#.",
+        "...#.#...",
+    ], {"#": c("#3a1f0d")})
+
+
+def wave_block():
+    """One block of the boss Wave's walls, Geometry Dash style: it tiles in every direction."""
+    return draw_map([
+        "kkkkkkkkkkkkkkkk",
+        "kLLLLLLLLLLLLLDk",
+        "kLMMMMMMMMMMMMDk",
+        "kLMFFFFFFFFFFMDk",
+        "kLMFHHFFFFFFFMDk",
+        "kLMFHFFFFFFFFMDk",
+        "kLMFFFFFFFFFFMDk",
+        "kLMFFFFFFFFFFMDk",
+        "kLMFFFFFFFFFFMDk",
+        "kLMFFFFFFFFFFMDk",
+        "kLMFFFFFFFFFFMDk",
+        "kLMFFFFFFFFFFMDk",
+        "kLMFFFFFFFFFFMDk",
+        "kLMMMMMMMMMMMMDk",
+        "kDDDDDDDDDDDDDDk",
+        "kkkkkkkkkkkkkkkk",
+    ], {"k": c("#120c22"), "L": c("#6a52b0"), "M": c("#3e2c78"), "F": c("#2a1e56"), "D": c("#1c1440"), "H": c("#8a74d0")})
 
 
 def quill(open_nib):
@@ -826,12 +871,128 @@ def ui_sprites():
             {"Y": c("#ffd84a"), "W": c("#fff2b0")})),
         "heart": heart(),
         "reset": reset_icon(),
-        "sound_on": speaker(True),
-        "sound_off": speaker(False),
         "quill": quill(False),
         "quill_open": quill(True),
+        "settings": gear(),
+        "wave_block": wave_block(),
     }
     return out
+
+
+# The nest's tree. Both layers share one canvas; y counts up from the trunk's base, which is
+# buried half a unit below the ground line. PixelArt.cs uses the same numbers.
+TREE_W, TREE_H, TREE_BASE_X, TREE_CROWN_Y, TREE_NEST_Y = 128, 200, 68, 135, 117
+
+
+def tree(level):
+    """One big tree growing out of the ground: flared roots, a thick trunk that tapers as it
+    climbs, the branch the nest sits on, and a crown to match the world - a full summer
+    canopy, storm-bent bare limbs with a few torn leaves, or frozen limbs capped with snow."""
+    W, H, bx = TREE_W, TREE_H, TREE_BASE_X
+    trunk, crown = Image.new("RGBA", (W, H), CLEAR), Image.new("RGBA", (W, H), CLEAR)
+    t, k = trunk.load(), crown.load()
+    rnd = random.Random(300 + level)
+    light, mid, dark = [(c("#a0703f"), c("#7a4e2a"), c("#4e3018")), (c("#8a7a72"), c("#5e4a44"), c("#3a2c28")),
+                        (c("#6a5a5a"), c("#4a3a3a"), c("#2e2424"))][level]
+
+    def put(px, x, y, col):
+        x, y = int(round(x)), int(round(y))
+        if 0 <= x < W and 0 <= y < H:
+            px[x, H - 1 - y] = col
+
+    def solid(px, x, y):
+        x, y = int(round(x)), int(round(y))
+        return 0 <= x < W and 0 <= y < H and px[x, H - 1 - y][3] > 0
+
+    def limb(px, x0, y0, x1, y1, thick, col=None):
+        n = max(abs(x1 - x0), abs(y1 - y0), 1)
+        flat = abs(x1 - x0) > abs(y1 - y0)
+        for i in range(int(n) + 1):
+            x, y = x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n
+            th = max(1, round(thick * (1 - 0.55 * i / n)))
+            for d in range(th):
+                tone = col or (light if d == 0 else dark if d == th - 1 and th > 2 else mid)
+                put(px, x, y + d - th // 2, tone) if flat else put(px, x + d - th // 2, y, tone)
+
+    # the trunk: wide where the roots spread into the ground, tapering towards the crown
+    top = TREE_CROWN_Y + 16
+    for y in range(top):
+        half = 10 - 4.5 * y / top + max(0, 34 - y) ** 1.6 * 0.045
+        wob = round(math.sin(y * 0.21) * 1.2)
+        x0, x1 = round(bx - half + wob), round(bx + half + wob)
+        for x in range(x0, x1 + 1):
+            f = (x - x0) / max(1, x1 - x0)
+            put(t, x, y, light if f < 0.25 else dark if f > 0.72 else mid)
+    for _ in range(45):  # bark: dark streaks
+        x, y = bx + rnd.randint(-6, 6), rnd.randint(14, top - 6)
+        for i in range(rnd.randint(2, 6)):
+            if solid(t, x, y + i):
+                put(t, x, y + i, dark)
+    for kx, ky in ((bx - 3, 60), (bx + 2, 96)):  # a couple of knots
+        for dx, dy in ((0, 0), (1, 0), (0, 1), (1, 1)):
+            put(t, kx + dx, ky + dy, dark)
+    # the nest's branch, growing out to the right and rising a little, with a twig
+    limb(t, bx + 4, TREE_NEST_Y - 4, bx + 52, TREE_NEST_Y - 1, 6)
+    limb(t, bx + 42, TREE_NEST_Y, bx + 49, TREE_NEST_Y + 9, 2)
+
+    if level == 0:  # summer: limbs into a full canopy, a few apples
+        limb(t, bx, top - 4, bx - 26, top + 26, 5)
+        limb(t, bx, top - 4, bx + 22, top + 24, 5)
+        puffs = [(-42, 150, 16), (-24, 170, 22), (2, 178, 20), (24, 166, 20), (38, 148, 15), (-34, 132, 15),
+                 (-10, 148, 24), (16, 142, 20), (32, 128, 12), (-52, 140, 10), (4, 192, 8)]
+        for dx, cy, r in puffs:
+            for y in range(cy - r, cy + r + 1):
+                for x in range(bx + dx - r, bx + dx + r + 1):
+                    if (x - bx - dx) ** 2 + (y - cy) ** 2 <= r * r + r:
+                        put(k, x, y, c("#4fa040"))
+        for dx, cy, r in puffs:  # sunlit upper-left of each clump
+            hx, hy, hr = bx + dx - r // 4, cy + r // 4, r // 2
+            for y in range(hy - hr, hy + hr + 1):
+                for x in range(hx - hr, hx + hr + 1):
+                    if (x - hx) ** 2 + (y - hy) ** 2 <= hr * hr:
+                        put(k, x, y, c("#7cc860"))
+        for _ in range(140):
+            x, y = rnd.randrange(W), rnd.randrange(110, H)
+            if solid(k, x, y):
+                put(k, x, y, c("#3a7a32") if rnd.random() < 0.7 else c("#b6e48a"))
+        for dx, cy in ((-30, 160), (8, 172), (26, 150), (-14, 140), (-44, 146)):
+            put(k, bx + dx, cy, c("#e8403a")); put(k, bx + dx + 1, cy, c("#e8403a"))
+            put(k, bx + dx, cy - 1, c("#a82828")); put(k, bx + dx + 1, cy - 1, c("#e8403a"))
+    else:
+        # bare limbs from the top of the trunk: bent away from the wind in the storm, frozen in winter
+        if level == 1:
+            limbs = [(0, 135, -14, 160, 5), (-14, 160, -32, 182, 4), (0, 140, 14, 160, 4), (14, 160, 6, 182, 3),
+                     (-14, 160, -42, 164, 3), (-32, 182, -50, 188, 2), (14, 160, 30, 168, 2), (-6, 148, -34, 144, 3),
+                     (6, 182, -6, 196, 2), (-42, 164, -56, 158, 1), (30, 168, 38, 178, 1)]
+        else:
+            limbs = [(0, 135, -24, 166, 5), (-24, 166, -40, 182, 3), (0, 135, 22, 164, 5), (22, 164, 38, 180, 3),
+                     (0, 140, 0, 188, 4), (-24, 166, -48, 160, 2), (22, 164, 48, 156, 2), (0, 170, -14, 192, 2),
+                     (0, 170, 14, 194, 2), (-40, 182, -50, 192, 1), (38, 180, 46, 192, 1)]
+        for x0, y0, x1, y1, th in limbs:
+            limb(k, bx + x0, y0, bx + x1, y1, th)
+        if level == 1:  # a few ragged leaves still hanging on
+            for x0, y0, x1, y1, th in limbs[3:]:
+                if rnd.random() < 0.8:
+                    put(k, bx + x1, y1, c("#7a7a3a")); put(k, bx + x1 + 1, y1, c("#a8a85a")); put(k, bx + x1, y1 - 1, c("#5a5a2a"))
+        else:  # snow on every upward-facing edge, and icicles hanging below
+            for y in range(H - 2, 0, -1):
+                for x in range(W):
+                    if solid(k, x, y) and not solid(k, x, y + 1) and rnd.random() < 0.9:
+                        put(k, x, y + 1, c("#f4f8ff"))
+            for x0, y0, x1, y1, th in limbs[:6]:
+                ix, iy = bx + (x0 + x1) // 2, (y0 + y1) // 2
+                for i in range(1, rnd.randint(3, 6)):
+                    if not solid(k, ix, iy - th // 2 - i):
+                        put(k, ix, iy - th // 2 - i, c("#bfe6ff"))
+            # snow along the nest branch and on the roots: find the top edges first, then paint,
+            # so new snow is never mistaken for more branch
+            caps = [(x, y + 1) for x in range(W) for y in list(range(TREE_NEST_Y - 8, TREE_NEST_Y + 4)) + list(range(14, 30))
+                    if solid(t, x, y) and not solid(t, x, y + 1) and (x > bx + 8 if y > 60 else abs(x - bx) > 7)]
+            for x, y in caps:
+                put(t, x, y, c("#f4f8ff"))
+    outline(trunk)
+    outline(crown)
+    return trunk, crown
 
 
 def prop_sprites():
@@ -856,76 +1017,13 @@ def prop_sprites():
     for x0, y0 in ((4, 0), (11, 0), (19, 0), (24, 1)):  # sticks poking out of the rim
         px[x0, y0] = c("#8a5a2e")
     outline(nest)
-    branch = Image.new("RGBA", (12, 5), CLEAR)
-    px = branch.load()
-    box(px, 0, 0, 12, 5, BLACK, 12, 5)
-    box(px, 0, 1, 12, 4, c("#6e4826"), 12, 5)
-    box(px, 0, 1, 12, 2, c("#8a5a2e"), 12, 5)
-    px[4, 2] = c("#4a2c16"); px[9, 3] = c("#4a2c16")
-    # tree that holds the nest: a trunk that tiles upward, and one crown per world
-    trunk = Image.new("RGBA", (12, 8), CLEAR)
-    px = trunk.load()
-    box(px, 0, 0, 1, 8, BLACK, 12, 8); box(px, 11, 0, 12, 8, BLACK, 12, 8)
-    box(px, 1, 0, 4, 8, c("#8a5a2e"), 12, 8); box(px, 4, 0, 9, 8, c("#6e4826"), 12, 8); box(px, 9, 0, 11, 8, c("#4a2c16"), 12, 8)
-    px[5, 2] = c("#4a2c16"); px[6, 3] = c("#4a2c16"); px[3, 6] = c("#a8784a")
-
-    # one tree per world: idyllic summer, storm-bent, and frozen
-    def limbs(q, lines, col, thick=1):
-        for x0, y0, x1, y1 in lines:
-            n = max(abs(x1 - x0), abs(y1 - y0))
-            for t in range(n + 1):
-                x, y = round(x0 + (x1 - x0) * t / n), round(y0 + (y1 - y0) * t / n)
-                box(q, x - thick, y, x + thick, y + 1, col, 56, 40)
-
-    def crown(level):
-        img = Image.new("RGBA", (56, 40), CLEAR)
-        q = img.load()
-        rnd = random.Random(80 + level)
-        if level == 0:  # summer: a full, sunlit canopy with a few apples
-            limbs(q, ((28, 39, 28, 24),), c("#6e4826"))
-            puffs = [(14, 20, 10), (28, 12, 13), (42, 20, 10), (20, 27, 9), (36, 27, 9), (6, 25, 6), (50, 25, 6)]
-            for cx, cy, r in puffs:
-                circle(q, cx, cy, r, c("#4fa040"), 56, 40)
-            for cx, cy, r in puffs:
-                circle(q, cx - r // 3, cy - r // 3, r // 2, c("#7cc860"), 56, 40)
-            for cx, cy, r in puffs[:3]:
-                circle(q, cx - r // 2, cy - r // 2, max(1, r // 5), c("#b6e48a"), 56, 40)
-            for _ in range(30):
-                x, y = rnd.randrange(56), rnd.randrange(40)
-                if q[x, y][3]:
-                    q[x, y] = c("#3a7a32")
-            for x, y in ((18, 18), (33, 9), (40, 24), (24, 28)):
-                box(q, x, y, x + 2, y + 2, c("#e8403a"), 56, 40)
-                q[x, y] = c("#ff9a8a")
-        elif level == 1:  # storm: bare, twisted and bent by the wind, a few ragged leaves left
-            wood = c("#7a625a")
-            limbs(q, ((30, 39, 28, 26), (28, 28, 14, 14), (28, 26, 18, 6), (28, 24, 40, 12), (20, 16, 6, 12), (16, 10, 8, 2),
-                      (36, 16, 46, 8), (22, 20, 12, 22)), wood)
-            limbs(q, ((14, 14, 4, 18), (18, 6, 10, 4), (40, 12, 50, 14), (24, 12, 22, 2)), wood, 0)
-            for x, y in ((10, 12), (6, 16), (12, 3), (20, 5), (44, 9), (48, 13), (16, 21)):
-                box(q, x - 1, y, x + 2, y + 2, c("#7a7a3a"), 56, 40)
-                q[x, y] = c("#a8a85a")
-        else:  # winter: frozen branches capped with snow, icicles hanging
-            wood = c("#4a3a3a")
-            limbs(q, ((28, 39, 28, 22), (28, 28, 14, 14), (28, 26, 42, 12), (28, 22, 26, 6), (18, 18, 8, 16), (38, 16, 50, 18),
-                      (14, 14, 10, 6), (42, 12, 46, 4)), wood)
-            for y in range(1, 40):  # snow on every branch top
-                for x in range(56):
-                    if q[x, y][3] and q[x, y - 1][3] == 0 and rnd.random() < 0.9:
-                        q[x, y - 1] = c("#f4f8ff")
-                        if rnd.random() < 0.5 and y > 1 and q[x, y - 2][3] == 0:
-                            q[x, y - 2] = c("#f4f8ff")
-            for x, y in ((12, 16), (20, 21), (36, 15), (44, 15), (24, 9)):  # icicles
-                for i in range(rnd.randint(2, 4)):
-                    if q[x, y + 1 + i][3] == 0:
-                        q[x, y + 1 + i] = c("#bfe6ff")
-        outline(img)
-        return img
-
     feather_bit = with_outline(draw_map(["..LL", "LLD.", "D..."], {"L": c("#c9935a"), "D": c("#6e4826")}))
-    return {"note": note, "bolt": bolt, "storm_cloud": cloud, "nest": nest, "branch": branch, "heart": heart(),
-            "tree_trunk": trunk, "feather_bit": feather_bit,
-            "crown_0": crown(0), "crown_1": crown(1), "crown_2": crown(2),
+    trees = [tree(level) for level in range(3)]
+    return {"note": note, "bolt": bolt, "storm_cloud": cloud, "nest": nest, "heart": heart(),
+            "feather_bit": feather_bit,
+            # one big tree per world (trunk with the nest's branch, and its crown as a layer that can sway)
+            "tree_0": trees[0][0], "crown_0": trees[0][1], "tree_1": trees[1][0], "crown_1": trees[1][1],
+            "tree_2": trees[2][0], "crown_2": trees[2][1],
             # what falls from each tree: summer leaves, storm-torn leaves, snow
             "leaf_0": with_outline(draw_map(["GG.", ".GL"], {"G": c("#5cb84a"), "L": c("#a6e070")})),
             "leaf_1": with_outline(draw_map(["BB.", ".BD"], {"B": c("#7a6a3a"), "D": c("#4a3a20")})),
@@ -951,7 +1049,7 @@ def main():
         for folder in (os.path.join(SPRITES, group), os.path.join(GAME, group)):
             os.makedirs(folder, exist_ok=True)
             for i, (name, im) in enumerate(sprites.items()):
-                tiles = name in ("panel", "parchment", "bar", "button", "button_hover", "screen_frame", "branch", "tree_trunk")
+                tiles = name in ("panel", "parchment", "bar", "button", "button_hover", "screen_frame")
                 scuff(im, 60 + i, shape=not tiles, tint=0.03 if tiles else 0.05).save(os.path.join(folder, name + ".png"))
         print("built", group)
     for folder in (SPRITES, GAME):

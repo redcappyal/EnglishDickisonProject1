@@ -43,16 +43,8 @@ namespace FlappyBird
             }
         }
 
-        private Transform Piece(string label, Sprite sprite, Vector2 size, Color color, int order)
-        {
-            SpriteRenderer piece = new GameObject(label, typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
-            piece.transform.SetParent(transform, false);
-            piece.transform.localScale = new Vector3(size.x, size.y, 1);
-            piece.sprite = sprite;
-            piece.color = color;
-            piece.sortingOrder = order;
-            return piece.transform;
-        }
+        private Transform Piece(string label, Sprite sprite, Vector2 size, Color color, int order) =>
+            PixelArt.Piece(label, transform, sprite, Vector2.zero, size, color, order).transform;
 
         public void Set(int level) => intensity = LevelWeather[level];
 

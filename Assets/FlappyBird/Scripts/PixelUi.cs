@@ -99,6 +99,17 @@ namespace FlappyBird
                         Rect.MinMaxRect(us[i], vs[j + 1], us[i + 1], vs[j]));
         }
 
+        // A ui texture repeated across a rect, shifted by offset (GUI units) - for walls that scroll.
+        public static void Pattern(Rect rect, string name, Vector2 offset, float scale = Px)
+        {
+            if (!Painting || rect.width <= 0 || rect.height <= 0) return;
+            Texture2D texture = Ui(name);
+            if (texture == null) { Fill(rect, Outline); return; }
+            texture.wrapMode = TextureWrapMode.Repeat;
+            float w = texture.width * scale, h = texture.height * scale;
+            GUI.DrawTextureWithTexCoords(rect, texture, new Rect((rect.x + offset.x) / w, -(rect.yMax + offset.y) / h, rect.width / w, rect.height / h));
+        }
+
         public static void Icon(string name, float x, float y, float scale = Px, bool flip = false)
         {
             if (!Painting) return;

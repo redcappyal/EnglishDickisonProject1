@@ -40,18 +40,22 @@ namespace FlappyBird
         public int FewestCrashes { get; private set; } = -1;
         public float Energy { get; private set; } = 100;
         // Pipes speed up within each level and from one level to the next.
+        // Just crashed: frozen for a moment, then waiting for a flap to fly on.
+        private bool Crashed => State == PlayState.GameOver || State == PlayState.AwaitingFlap;
         public bool WorldMoving => State == PlayState.Playing || State == PlayState.Interlude || State == PlayState.Warmth;
         public float CurrentSpeed => pipeSpeed * (1 + 0.12f * LevelIndex + 0.1f * LevelProgress + 0.15f * StormSurge);
         // "And sore must be the storm": over the Gale's last stretch the storm throws everything it has.
-        public float StormSurge => LevelIndex == 1 && (State == PlayState.Playing || State == PlayState.GameOver || State == PlayState.AwaitingFlap)
+        public float StormSurge => LevelIndex == 1 && (State == PlayState.Playing || Crashed)
             ? Mathf.Clamp01((LevelProgress - 0.6f) / 0.3f) : 0;
         private float LevelProgress => (float)(Score % ObstaclesPerLevel) / ObstaclesPerLevel;
 
-        private bool showingPoem;
-        private float timeScaleBeforePoem = 1f;
+        // Pages over the game - the poem, settings and the credits. The game pauses underneath.
+        private enum Overlay { None, Poem, Settings, Credits }
+        private Overlay overlay;
+        private float timeScaleBeforeOverlay = 1f;
         private const string CreatorCredit = "Made by Alvin, Shridhar and Ishaan";
         // Shown on the title screen and poem page. See the version history in README.md.
-        public const string VersionLabel = "VERSION 1.7.0";
+        public const string VersionLabel = "VERSION 1.8.0";
         // Public-domain text: Academy of American Poets, poem 254 (Johnson).
         private const string PoemText =
             "Hope is the thing with feathers\n"
@@ -67,13 +71,16 @@ namespace FlappyBird
             + "Yet, never, in extremity,\n"
             + "It asked a crumb of me.";
 
-        private const string BestKey = "FlappyBird.FewestCrashes", MuteKey = "FlappyBird.Muted";
-        // Sound: effects, mute (M or the speaker button), and the finale's boss.
+        private const string BestKey = "FlappyBird.FewestCrashes", VolumeKey = "FlappyBird.Volume", EasyKey = "FlappyBird.Easy";
+        // Settings: volume (M mutes), easy mode (a gentler boss fight) and the credits.
+        public bool EasyMode { get; private set; }
+        private float volume = 1, volumeBeforeMute = 1;
+        private bool draggingVolume;
         private SoundFx sfx;
         private DickinsonBoss boss;
         private BirdThoughtNotes thoughts;
-        private bool muted, galeThunder;
-        private Rect muteButton, titleMuteButton;
+        private bool galeThunder;
+        private Rect settingsButton, titleSettingsButton;
         private float lastCatch = -1, bossStart, nestSink;
         // How far the resting bird sinks into the nest: its lower half hides behind the bowl's rim.
         private const float NestDepth = 6 / PixelArt.PixelsPerUnit;
@@ -132,7 +139,7 @@ namespace FlappyBird
         private const float CrossfadeTime = 4f;
         private static readonly float[] SceneryAlpha = { 0.7f, 0.32f, 0.6f };
         // Tree that holds the nest (summer, storm or winter to match the world), and crash/fall effects.
-        private SpriteRenderer treeCrown;
+        private SpriteRenderer treeTrunk, treeCrown;
         private Sprite featherArt;
         private float shakeUntil = -10, crashAt = -10;
         private int lostHope;
@@ -146,10 +153,10 @@ namespace FlappyBird
         // WorldSpeed is how fast the world actually scrolls; it eases toward the gameplay pace
         // (CurrentSpeed) so take-offs, recoveries, cutscenes and the finish never jump.
         public float WorldSpeed { get; private set; }
-        private float bootAt, titleFadeAt = -10, poemFadeAt = -10, playStartAt = -10, readyAt = -10;
+        private float bootAt, titleFadeAt = -10, overlayFadeAt = -10, playStartAt = -10, readyAt = -10;
         private float resumedAt = -10, completeAt = -10, dipAt = -10, shownEnergy = 100, smoothSurge;
         private System.Action dipAction; // runs while the screen is dark, then it fades back
-        private bool poemClosing, buttonsLive = true;
+        private bool overlayClosing, buttonsLive = true;
         private float uiAlpha = 1;
         // Cutscene flight, and the next tree gliding in under the bird as the cutscene ends.
         private float birdVelocity, birdTilt, arriveStart = -10, arriveDuration, arriveDistance, arrived;
@@ -208,14 +215,8 @@ namespace FlappyBird
             ground = Block("Ground", transform, new Vector2(0, Floor - 0.35f), new Vector2(HalfWidth * 2 + 4, 0.7f), new Color(0.8f, 0.68f, 0.42f), true).GetComponent<SpriteRenderer>();
             grass = Block("Grass", transform, new Vector2(0, Floor - 0.04f), new Vector2(HalfWidth * 2 + 4, 0.12f), new Color(0.5f, 0.77f, 0.24f), false).GetComponent<SpriteRenderer>();
             Block("Ceiling", transform, new Vector2(0, cameraHalfHeight + 0.5f), new Vector2(HalfWidth * 2 + 4, 1), Color.clear, true);
-            groundArt = new GameObject("Ground Art", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
-            groundArt.transform.SetParent(transform, false);
-            groundArt.drawMode = SpriteDrawMode.Tiled;
-            groundArt.sortingOrder = 4;
-            backdropArt = new GameObject("Backdrop", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
-            backdropArt.transform.SetParent(transform, false);
-            backdropArt.drawMode = SpriteDrawMode.Tiled;
-            backdropArt.sortingOrder = -10;
+            groundArt = PixelArt.Tiled("Ground Art", transform, 4);
+            backdropArt = PixelArt.Tiled("Backdrop", transform, -10);
             heartArt = PixelArt.Prop("heart", new Vector2(0.5f, 0.5f));
             featherArt = PixelArt.Prop("feather_bit", new Vector2(0.5f, 0.5f));
             CreateNest();
@@ -237,10 +238,7 @@ namespace FlappyBird
             birdHurt = PixelArt.Bird("hurt");
             if (birdFrames[0] != null && birdFrames[1] != null && birdFrames[2] != null)
             {
-                birdArt = new GameObject("Bird Art", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
-                birdArt.transform.SetParent(bird.transform, false);
-                birdArt.sprite = birdFrames[1];
-                birdArt.sortingOrder = 5;
+                birdArt = PixelArt.Piece("Bird Art", bird.transform, birdFrames[1], Vector2.zero, Vector2.one, Color.white, 5);
                 foreach (GameObject piece in placeholder) piece.SetActive(false);
             }
             Bird = bird.GetComponent<BirdController>();
@@ -262,7 +260,8 @@ namespace FlappyBird
             boss = new GameObject("Emily Dickinson", typeof(SpriteRenderer)).AddComponent<DickinsonBoss>();
             boss.transform.SetParent(transform, false);
             boss.Initialize(this, music, sfx);
-            SetMuted(PlayerPrefs.GetInt(MuteKey, 0) == 1);
+            SetVolume(PlayerPrefs.GetFloat(VolumeKey, 1));
+            EasyMode = PlayerPrefs.GetInt(EasyKey, 0) == 1;
             FewestCrashes = PlayerPrefs.GetInt(BestKey, -1);
             ApplyLevel();
             ResetRun();
@@ -283,14 +282,7 @@ namespace FlappyBird
 
         private GameObject Block(string label, Transform parent, Vector2 position, Vector2 size, Color color, bool solid, int order = 0)
         {
-            GameObject block = new GameObject(label, typeof(SpriteRenderer));
-            block.transform.SetParent(parent, false);
-            block.transform.localPosition = position;
-            block.transform.localScale = new Vector3(size.x, size.y, 1);
-            SpriteRenderer renderer = block.GetComponent<SpriteRenderer>();
-            renderer.sprite = square;
-            renderer.color = color;
-            renderer.sortingOrder = order;
+            GameObject block = PixelArt.Piece(label, parent, square, position, size, color, order).gameObject;
             if (solid) block.AddComponent<BoxCollider2D>();
             return block;
         }
@@ -305,26 +297,22 @@ namespace FlappyBird
             Color straw = new Color(0.73f, 0.48f, 0.23f);
             // A branch supports the bowl; all pieces are decorative so takeoff is unobstructed.
             float branchLength = HalfWidth - 1.5f + 0.6f;
-            Sprite bowlArt = PixelArt.Prop("nest", new Vector2(0.5f, 1)), branchArt = PixelArt.Prop("branch", new Vector2(0.5f, 0.5f));
-            Sprite trunkArt = PixelArt.Prop("tree_trunk", new Vector2(0.5f, 0));
-            if (bowlArt != null && branchArt != null && trunkArt != null)
+            Sprite bowlArt = PixelArt.Prop("nest", new Vector2(0.5f, 1));
+            if (bowlArt != null && PixelArt.Tree(0) != null)
             {
-                // A tree grows up out of the ground; the nest sits at the end of one of its branches.
-                const float trunkX = -1.25f, branchY = -0.25f;
+                // One big tree grows out of the ground (its base is buried a little below the ground
+                // line); the nest sits on the branch that reaches out to the right.
+                const float trunkX = -1.25f;
                 float groundBelow = Floor - 0.5f - nestStartPosition.y;
-                SpriteRenderer trunk = NestPiece("Tree Trunk", trunkArt, new Vector2(trunkX, groundBelow), 1);
-                trunk.drawMode = SpriteDrawMode.Tiled;
-                trunk.size = new Vector2(trunkArt.bounds.size.x, branchY + 0.2f - groundBelow);
-                SpriteRenderer branch = NestPiece("Branch", branchArt, new Vector2((trunkX + 0.1f) / 2, branchY), 1);
-                branch.drawMode = SpriteDrawMode.Tiled;
-                branch.size = new Vector2(0.1f - trunkX, branchArt.bounds.size.y);
-                treeCrown = NestPiece("Tree Crown", null, new Vector2(trunkX, -0.12f), 2);
+                treeTrunk = NestPiece("Tree", null, new Vector2(trunkX, groundBelow), 1);
+                treeCrown = NestPiece("Tree Crown", null, new Vector2(trunkX, groundBelow + PixelArt.TreeCrownRows / PixelArt.PixelsPerUnit), 2);
                 // In front of the bird, so it sits inside the nest.
                 NestPiece("Nest Bowl", bowlArt, new Vector2(0, 0.1f), 6);
                 Sprite[] falling = { PixelArt.Prop("leaf_0", new Vector2(0.5f, 0.5f)), PixelArt.Prop("leaf_1", new Vector2(0.5f, 0.5f)),
                     PixelArt.Prop("leaf_2", new Vector2(0.5f, 0.5f)) };
                 if (System.Array.TrueForAll(falling, sprite => sprite != null))
-                    nest.gameObject.AddComponent<TreeLeaves>().Initialize(this, falling, treeCrown.transform, new Vector2(trunkX, 0.55f), 1.7f, groundBelow + 0.5f);
+                    nest.gameObject.AddComponent<TreeLeaves>().Initialize(this, falling, treeCrown.transform,
+                        new Vector2(trunkX - 0.2f, groundBelow + 160 / PixelArt.PixelsPerUnit), 3.2f, groundBelow + 0.5f);
                 return;
             }
             Block("Branch", nest, new Vector2(-branchLength / 2 + 0.2f, -0.25f), new Vector2(branchLength, 0.15f), wood, false, 1);
@@ -341,39 +329,21 @@ namespace FlappyBird
             }
         }
 
-        private SpriteRenderer NestPiece(string label, Sprite sprite, Vector2 position, int order)
-        {
-            SpriteRenderer piece = new GameObject(label, typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
-            piece.transform.SetParent(nest, false);
-            piece.transform.localPosition = position;
-            piece.sprite = sprite;
-            piece.sortingOrder = order;
-            return piece;
-        }
+        private SpriteRenderer NestPiece(string label, Sprite sprite, Vector2 position, int order) =>
+            PixelArt.Piece(label, nest, sprite, position, Vector2.one, Color.white, order);
 
-        internal static bool FlapPressed()
+        // Space, the mouse button or a finger: pressed this frame, or held down (the boss's Wave flies on that).
+        internal static bool FlapPressed() => Flap(false);
+        internal static bool FlapHeld() => Flap(true);
+
+        private static bool Flap(bool held)
         {
 #if ENABLE_INPUT_SYSTEM
-            return (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
-                || (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-                || (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame);
+            bool Down(UnityEngine.InputSystem.Controls.ButtonControl button) => button != null && (held ? button.isPressed : button.wasPressedThisFrame);
+            return Down(Keyboard.current?.spaceKey) || Down(Mouse.current?.leftButton) || Down(Touchscreen.current?.primaryTouch.press);
 #elif ENABLE_LEGACY_INPUT_MANAGER
-            return Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0)
-                || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began);
-#else
-            return false;
-#endif
-        }
-
-        // Space, the mouse button or a finger held down (the boss's Wave flies on this).
-        internal static bool FlapHeld()
-        {
-#if ENABLE_INPUT_SYSTEM
-            return (Keyboard.current != null && Keyboard.current.spaceKey.isPressed)
-                || (Mouse.current != null && Mouse.current.leftButton.isPressed)
-                || (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed);
-#elif ENABLE_LEGACY_INPUT_MANAGER
-            return Input.GetKey(KeyCode.Space) || Input.GetMouseButton(0) || Input.touchCount > 0;
+            return held ? Input.GetKey(KeyCode.Space) || Input.GetMouseButton(0) || Input.touchCount > 0
+                : Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0) || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began);
 #else
             return false;
 #endif
@@ -383,20 +353,24 @@ namespace FlappyBird
         {
 #if ENABLE_INPUT_SYSTEM
             return Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame;
-#elif ENABLE_LEGACY_INPUT_MANAGER
-            return Input.GetKeyDown(KeyCode.M);
 #else
-            return false;
+            return Input.GetKeyDown(KeyCode.M);
 #endif
         }
 
-        // Mute silences everything, music and sound effects, and is remembered between visits.
-        private void SetMuted(bool value)
+        // The volume covers everything, music and sound effects, and is remembered between visits.
+        private void SetVolume(float value, bool save = true)
         {
-            muted = value;
-            AudioListener.volume = muted ? 0 : 1;
-            PlayerPrefs.SetInt(MuteKey, muted ? 1 : 0);
-            PlayerPrefs.Save();
+            volume = Mathf.Clamp01(value);
+            AudioListener.volume = volume;
+            PlayerPrefs.SetFloat(VolumeKey, volume);
+            if (save) PlayerPrefs.Save();
+        }
+
+        private void ToggleMute()
+        {
+            if (volume > 0) volumeBeforeMute = volume;
+            SetVolume(volume > 0 ? 0 : volumeBeforeMute);
         }
 
         internal bool PointerOverControls()
@@ -412,8 +386,8 @@ namespace FlappyBird
 #endif
             float scale = Screen.height / UiHeight;
             Vector2 ui = new Vector2(pointer.x / scale, (Screen.height - pointer.y) / scale);
-            if (showingTitle) return playButton.Contains(ui) || titlePoemButton.Contains(ui) || titleMuteButton.Contains(ui);
-            return poemButton.Contains(ui) || playAgainButton.Contains(ui) || resetButton.Contains(ui) || muteButton.Contains(ui);
+            if (showingTitle) return playButton.Contains(ui) || titlePoemButton.Contains(ui) || titleSettingsButton.Contains(ui);
+            return poemButton.Contains(ui) || playAgainButton.Contains(ui) || resetButton.Contains(ui) || settingsButton.Contains(ui);
         }
 
         private void Update()
@@ -430,13 +404,17 @@ namespace FlappyBird
                 dipAction = null;
                 action();
             }
-            if (poemClosing && Time.unscaledTime - poemFadeAt >= 0.2f)
+            if (overlayClosing && Time.unscaledTime - overlayFadeAt >= 0.2f)
             {
-                showingPoem = poemClosing = false;
-                Time.timeScale = timeScaleBeforePoem;
+                overlay = Overlay.None;
+                overlayClosing = false;
+                Time.timeScale = timeScaleBeforeOverlay;
             }
-            if (MutePressed()) SetMuted(!muted);
-            if (showingPoem) return;
+            if (MutePressed()) ToggleMute();
+            // The credits page goes back to Settings when it ends, or on Space or a click.
+            if (overlay == Overlay.Credits && !overlayClosing
+                && (FlapPressed() || Time.unscaledTime - overlayFadeAt > Credits.Duration)) Show(Overlay.Settings);
+            if (overlay != Overlay.None) return;
             thoughts.Resting = State == PlayState.Boss;
             AnimateScenery();
             AnimateBird();
@@ -687,9 +665,10 @@ namespace FlappyBird
             arriveStart = Time.time;
             arriveDuration = duration;
             arrived = 0;
-            // Park the tree just past the right edge, as far from its spot as the world will travel.
+            // Park the tree just past the right edge - far enough that the left edge of its crown,
+            // about 3.5 units left of the nest, is hidden too - as far from its spot as the world will travel.
             float right = arenaCamera.orthographicSize * arenaCamera.aspect;
-            arriveDistance = right + 2.6f - nestStartPosition.x;
+            arriveDistance = right + 4f - nestStartPosition.x;
             ClearPipes();
             nest.localPosition = nestStartPosition + Vector3.right * arriveDistance;
             nest.gameObject.SetActive(true);
@@ -784,14 +763,8 @@ namespace FlappyBird
         {
             if (backdropOld == null)
             {
-                backdropOld = new GameObject("Backdrop (fading out)", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
-                backdropOld.transform.SetParent(transform, false);
-                backdropOld.drawMode = SpriteDrawMode.Tiled;
-                backdropOld.sortingOrder = backdropArt.sortingOrder;
-                groundOld = new GameObject("Ground (fading out)", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
-                groundOld.transform.SetParent(transform, false);
-                groundOld.drawMode = SpriteDrawMode.Tiled;
-                groundOld.sortingOrder = groundArt.sortingOrder;
+                backdropOld = PixelArt.Tiled("Backdrop (fading out)", transform, backdropArt.sortingOrder);
+                groundOld = PixelArt.Tiled("Ground (fading out)", transform, groundArt.sortingOrder);
             }
             backdropOld.sprite = backdropArt.sprite;
             backdropOld.size = backdropArt.size;
@@ -895,14 +868,11 @@ namespace FlappyBird
 
         private static void PipeArt(Transform pair, Sprite sprite, float y, float height)
         {
-            SpriteRenderer art = new GameObject("Pipe Art", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
-            art.transform.SetParent(pair, false);
+            SpriteRenderer art = PixelArt.Tiled("Pipe Art", pair, 3);
             art.transform.localPosition = new Vector3(0, y, 0);
             art.sprite = sprite;
-            art.drawMode = SpriteDrawMode.Tiled;
             art.tileMode = SpriteTileMode.Continuous;
             art.size = new Vector2(sprite.bounds.size.x, height);
-            art.sortingOrder = 3;
         }
 
         public void AddScore()
@@ -990,7 +960,11 @@ namespace FlappyBird
                 backdropArt.transform.localPosition = new Vector3(-backdropScroll, Floor, 0);
             }
 
-            if (treeCrown != null) treeCrown.sprite = PixelArt.Prop("crown_" + VisualLevel, new Vector2(0.5f, 0.12f));
+            if (treeTrunk != null)
+            {
+                treeTrunk.sprite = PixelArt.Tree(VisualLevel);
+                treeCrown.sprite = PixelArt.TreeCrown(VisualLevel);
+            }
             groundArt.sprite = PixelArt.Ground(VisualLevel);
             bool hasGround = groundArt.sprite != null;
             groundArt.enabled = hasGround;
@@ -1006,7 +980,7 @@ namespace FlappyBird
         private void AnimateBird()
         {
             if (birdArt == null) return;
-            if (State == PlayState.GameOver || State == PlayState.AwaitingFlap || boss.Flickering)
+            if (Crashed || boss.Flickering)
                 birdArt.sprite = birdHurt != null ? birdHurt : birdFrames[1];
             else if (State == PlayState.Playing || State == PlayState.Interlude || State == PlayState.Warmth
                 || State == PlayState.Boss && !boss.BirdStill)
@@ -1137,34 +1111,33 @@ namespace FlappyBird
             nest.gameObject.SetActive(true);
         }
 
-        // The poem page fades in and out (on unscaled time, since the game is paused under it).
-        private void SetPoemVisible(bool visible)
+        // Pages fade in and out (on unscaled time, since the game is paused under them).
+        private void Show(Overlay page)
         {
-            if (visible)
+            if (overlay == page && !overlayClosing) return;
+            if (overlay == Overlay.None)
             {
-                if (showingPoem && !poemClosing) return;
-                if (!showingPoem)
-                {
-                    timeScaleBeforePoem = Time.timeScale;
-                    Time.timeScale = 0;
-                }
-                showingPoem = true;
-                poemClosing = false;
-                poemFadeAt = Time.unscaledTime;
+                timeScaleBeforeOverlay = Time.timeScale;
+                Time.timeScale = 0;
             }
-            else if (showingPoem && !poemClosing)
-            {
-                poemClosing = true;
-                poemFadeAt = Time.unscaledTime;
-            }
+            overlay = page;
+            overlayClosing = false;
+            overlayFadeAt = Time.unscaledTime;
         }
 
-        private float PoemAlpha
+        private void CloseOverlay()
+        {
+            if (overlay == Overlay.None || overlayClosing) return;
+            overlayClosing = true;
+            overlayFadeAt = Time.unscaledTime;
+        }
+
+        private float OverlayAlpha
         {
             get
             {
-                float t = Mathf.Clamp01((Time.unscaledTime - poemFadeAt) / 0.2f);
-                return poemClosing ? 1 - t : t;
+                float t = Mathf.Clamp01((Time.unscaledTime - overlayFadeAt) / 0.2f);
+                return overlayClosing ? 1 - t : t;
             }
         }
 
@@ -1193,10 +1166,10 @@ namespace FlappyBird
             Color previousColor = GUI.color;
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1));
             GUI.color = Color.white;
-            playAgainButton = resetButton = muteButton = titleMuteButton = Rect.zero;
+            playAgainButton = resetButton = settingsButton = titleSettingsButton = Rect.zero;
             float now = Time.unscaledTime;
             // Underneath: the title (fading out once you press Play) or the HUD (fading in).
-            buttonsLive = !showingPoem;
+            buttonsLive = overlay == Overlay.None;
             float sinceTitle = now - titleFadeAt;
             if (showingTitle) { uiAlpha = 1; DrawTitle(width); }
             else
@@ -1207,12 +1180,14 @@ namespace FlappyBird
                 GUI.color = new Color(1, 1, 1, uiAlpha);
                 DrawHud(width);
             }
-            if (showingPoem)
+            if (overlay != Overlay.None)
             {
-                buttonsLive = true;
-                uiAlpha = PoemAlpha;
+                buttonsLive = !overlayClosing;
+                uiAlpha = OverlayAlpha;
                 GUI.color = new Color(1, 1, 1, uiAlpha);
-                DrawPoem(width);
+                if (overlay == Overlay.Poem) DrawPoem(width);
+                else if (overlay == Overlay.Settings) DrawSettings(width);
+                else DrawCreditsPage(width);
             }
             uiAlpha = 1;
             GUI.color = Color.white;
@@ -1313,9 +1288,9 @@ namespace FlappyBird
                     new Color(1f, 0.4f, 0.35f, 1 - sinceCrash / 0.9f), 0.5f);
 
             poemButton = new Rect(width - UiMargin - 84, UiMargin + 64, 84, 36);
-            if (Button(poemButton, "POEM", 2)) SetPoemVisible(true);
-            muteButton = new Rect(poemButton.x - 12 - 48, poemButton.y, 48, 36);
-            if (Button(muteButton, "", 2, muted ? "sound_off" : "sound_on")) SetMuted(!muted);
+            if (Button(poemButton, "POEM", 2)) Show(Overlay.Poem);
+            settingsButton = new Rect(poemButton.x - 12 - 48, poemButton.y, 48, 36);
+            if (Button(settingsButton, "", 2, "settings")) Show(Overlay.Settings);
 
             // Centre messages.
             float bob = Mathf.Round(Mathf.Sin(now * 4) * 2) * 3;
@@ -1361,7 +1336,7 @@ namespace FlappyBird
                 Fade(1);
             }
             float sinceResume = now - resumedAt;
-            bool crashPanel = State == PlayState.GameOver || State == PlayState.AwaitingFlap;
+            bool crashPanel = Crashed;
             if (crashPanel || State == PlayState.Playing && resumedAt > crashAt && sinceResume < 0.25f)
             {
                 // Fades in on impact, out as you fly on.
@@ -1391,7 +1366,7 @@ namespace FlappyBird
             }
 
             // Back to this level's tree, from any point in the level.
-            if (State == PlayState.Ready || State == PlayState.Playing || State == PlayState.GameOver || State == PlayState.AwaitingFlap
+            if (State == PlayState.Ready || State == PlayState.Playing || Crashed
                 || State == PlayState.Boss && boss.HudHide <= 0)
             {
                 resetButton = new Rect(UiMargin, UiHeight - UiMargin - 42, 168, 42);
@@ -1427,13 +1402,7 @@ namespace FlappyBird
             }
 
             // Credits, small, bottom right.
-            const string poemCredit = "POEM BY EMILY DICKINSON";
-            float creditWidth = Mathf.Max(PixelUi.TextWidth(poemCredit, 2), PixelUi.TextWidth(CreatorCredit, 2));
-            PixelUi.Fill(new Rect(width - UiMargin - creditWidth - 9, UiHeight - UiMargin - 36, creditWidth + 18, 39),
-                new Color(0.08f, 0.06f, 0.1f, 0.6f));
-            Color credit = new Color(1, 1, 1, 0.9f);
-            PixelUi.SmallPrint(poemCredit, width - UiMargin, UiHeight - UiMargin - 30, credit, 1);
-            PixelUi.SmallPrint(CreatorCredit, width - UiMargin, UiHeight - UiMargin - 15, credit, 1);
+            CreditLabel(width);
         }
 
         private void DrawTitle(float width)
@@ -1454,19 +1423,26 @@ namespace FlappyBird
             playButton = new Rect(Mathf.Round(width / 2 - 195), 574, 192, 54);
             if (Button(playButton, "PLAY", 4)) StartGame();
             titlePoemButton = new Rect(playButton.xMax + 12, 574, 120, 54);
-            if (Button(titlePoemButton, "POEM", 3)) SetPoemVisible(true);
-            titleMuteButton = new Rect(titlePoemButton.xMax + 12, 574, 54, 54);
-            if (Button(titleMuteButton, "", 3, muted ? "sound_off" : "sound_on")) SetMuted(!muted);
+            if (Button(titlePoemButton, "POEM", 3)) Show(Overlay.Poem);
+            titleSettingsButton = new Rect(titlePoemButton.xMax + 12, 574, 54, 54);
+            if (Button(titleSettingsButton, "", 3, "settings")) Show(Overlay.Settings);
             PixelUi.SmallPrint(VersionLabel, UiMargin, UiHeight - UiMargin - 15, new Color(1, 1, 1, 0.7f));
             string hint = FewestCrashes >= 0 ? $"FEWEST CRASHES {FewestCrashes}  -  OR PRESS SPACE" : "OR PRESS SPACE";
             if (Mathf.Repeat(now, 1.2f) < 0.8f) PixelUi.Text(hint, width / 2, 646, 2, Color.white, 0.5f);
 
+            CreditLabel(width);
+        }
+
+        // Small print in the bottom-right corner: who wrote the poem, and who made the game.
+        private void CreditLabel(float width)
+        {
             const string poemCredit = "POEM BY EMILY DICKINSON";
             float creditWidth = Mathf.Max(PixelUi.TextWidth(poemCredit, 2), PixelUi.TextWidth(CreatorCredit, 2));
             PixelUi.Fill(new Rect(width - UiMargin - creditWidth - 9, UiHeight - UiMargin - 36, creditWidth + 18, 39),
                 new Color(0.08f, 0.06f, 0.1f, 0.6f));
-            PixelUi.SmallPrint(poemCredit, width - UiMargin, UiHeight - UiMargin - 30, new Color(1, 1, 1, 0.9f), 1);
-            PixelUi.SmallPrint(CreatorCredit, width - UiMargin, UiHeight - UiMargin - 15, new Color(1, 1, 1, 0.9f), 1);
+            Color credit = new Color(1, 1, 1, 0.9f);
+            PixelUi.SmallPrint(poemCredit, width - UiMargin, UiHeight - UiMargin - 30, credit, 1);
+            PixelUi.SmallPrint(CreatorCredit, width - UiMargin, UiHeight - UiMargin - 15, credit, 1);
         }
 
         private void DrawPoem(float width)
@@ -1502,7 +1478,62 @@ namespace FlappyBird
             string label = showingTitle ? "BACK" : "BACK TO THE GAME";
             Rect button = new Rect(0, page.yMax - 80, PixelUi.TextWidth(label, 3) + 48, 48);
             button.x = Mathf.Round(center - button.width / 2);
-            if (Button(button, label, 3)) SetPoemVisible(false);
+            if (Button(button, label, 3)) CloseOverlay();
+        }
+
+        private void DrawSettings(float width)
+        {
+            PixelUi.Fill(new Rect(0, 0, width, UiHeight), new Color(0.04f, 0.03f, 0.07f, 0.75f));
+            Rect page = new Rect(Mathf.Round((width - 460) / 2), 170, 460, 430);
+            PixelUi.Frame(page, "panel");
+            float left = page.x + 30, right = page.xMax - 30;
+            PixelUi.Text("SETTINGS", page.center.x, page.y + 26, 5, LevelAccent[0], 0.5f);
+
+            PixelUi.Text("VOLUME", left, page.y + 92, 3, Color.white);
+            PixelUi.Text(Mathf.RoundToInt(volume * 100).ToString(), right, page.y + 92, 3, UiMuted, 1);
+            VolumeSlider(new Rect(left, page.y + 126, right - left, 12));
+
+            Rect toggle = new Rect(right - 96, page.y + 176, 96, 42);
+            PixelUi.Text("EASY MODE", left, page.y + 180, 3, Color.white);
+            PixelUi.SmallPrint("A GENTLER BOSS FIGHT", left, page.y + 206, UiMuted);
+            if (Button(toggle, EasyMode ? "ON" : "OFF", 3))
+            {
+                EasyMode = !EasyMode;
+                PlayerPrefs.SetInt(EasyKey, EasyMode ? 1 : 0);
+                PlayerPrefs.Save();
+            }
+
+            if (Button(new Rect(left, page.y + 254, right - left, 48), "CREDITS", 3)) Show(Overlay.Credits);
+            if (Button(new Rect(page.center.x - 90, page.yMax - 82, 180, 48), "BACK", 3)) CloseOverlay();
+        }
+
+        // A pixel slider: click or drag anywhere along it.
+        private void VolumeSlider(Rect track)
+        {
+            Event e = Event.current;
+            Rect grab = new Rect(track.x - 12, track.y - 18, track.width + 24, track.height + 36);
+            if (buttonsLive && e.type == EventType.MouseDown && grab.Contains(e.mousePosition)) draggingVolume = true;
+            if (draggingVolume && (e.type == EventType.MouseDown || e.type == EventType.MouseDrag))
+            {
+                SetVolume((e.mousePosition.x - track.x) / track.width, false);
+                e.Use();
+            }
+            if (draggingVolume && e.type == EventType.MouseUp)
+            {
+                draggingVolume = false;
+                PlayerPrefs.Save();
+            }
+            PixelUi.Frame(new Rect(track.x - 9, track.y - 9, track.width + 18, track.height + 18), "bar");
+            PixelUi.Fill(new Rect(track.x, track.y, Mathf.Round(track.width * volume / 3) * 3, track.height), LevelAccent[0]);
+            bool hover = draggingVolume || buttonsLive && grab.Contains(e.mousePosition);
+            PixelUi.Frame(new Rect(Mathf.Round(track.x + track.width * volume - 12), track.y - 12, 24, track.height + 24), hover ? "button_hover" : "button");
+        }
+
+        private void DrawCreditsPage(float width)
+        {
+            PixelUi.Fill(new Rect(0, 0, width, UiHeight), new Color(0.006f, 0.005f, 0.014f, 0.96f)); // linear colour: near black
+            Credits.Draw(width, Time.unscaledTime - overlayFadeAt, 1);
+            PixelUi.Text("SPACE OR CLICK TO GO BACK", width / 2, UiMargin + 12, 2, UiMuted, 0.5f);
         }
 
         private bool Button(Rect rect, string label, float size, string icon = null)
@@ -1527,7 +1558,7 @@ namespace FlappyBird
 
         private void OnDestroy()
         {
-            if (showingPoem) Time.timeScale = timeScaleBeforePoem;
+            if (overlay != Overlay.None) Time.timeScale = timeScaleBeforeOverlay;
             if (square != null) Destroy(square);
             if (texture != null) Destroy(texture);
         }

@@ -19,8 +19,16 @@ namespace FlappyBird
 
         public static Sprite Bird(string frame) => Load("bird/bird_" + frame, new Vector2(0.5f, 0.5f));
 
-        // Decorations shared by all levels: nest, branch, storm cloud, lightning, notes.
+        // Decorations shared by all levels: nest, storm cloud, lightning, notes.
         public static Sprite Prop(string name, Vector2 pivot) => Load("props/" + name, pivot);
+
+        // The nest's tree (Art/make_sprites.py: TREE_*). Both layers share one canvas: the trunk
+        // pivots on the base of the trunk, the crown on the point where it meets the trunk (so the
+        // storm can rock it there).
+        private const float TreeWidth = 128, TreeHeight = 200, TreeBaseX = 68;
+        public const float TreeCrownRows = 135;
+        public static Sprite Tree(int level) => Prop("tree_" + level, new Vector2(TreeBaseX / TreeWidth, 0));
+        public static Sprite TreeCrown(int level) => Prop("crown_" + level, new Vector2(TreeBaseX / TreeWidth, TreeCrownRows / TreeHeight));
 
         // Pivot on the top edge of the ground's grass line.
         public static Sprite Ground(int level) => Load(Folder(level) + "/ground", new Vector2(0.5f, 1));
@@ -47,6 +55,27 @@ namespace FlappyBird
             Texture2D texture = Texture(Folder(level) + "/pipe_bottom");
             return texture == null ? null : Load(Folder(level) + "/pipe_bottom", new Vector2(0.5f, 0), PixelsPerUnit,
                 new Vector4(0, 0, 0, texture.height - PipeBodyRows));
+        }
+
+        // A sprite on its own child object - the building block for everything drawn in the world.
+        public static SpriteRenderer Piece(string label, Transform parent, Sprite sprite, Vector2 position, Vector2 scale, Color color, int order)
+        {
+            SpriteRenderer piece = new GameObject(label, typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
+            piece.transform.SetParent(parent, false);
+            piece.transform.localPosition = position;
+            piece.transform.localScale = new Vector3(scale.x, scale.y, 1);
+            piece.sprite = sprite;
+            piece.color = color;
+            piece.sortingOrder = order;
+            return piece;
+        }
+
+        // A sprite that repeats to fill whatever size it's given (ground, backdrops, pipes).
+        public static SpriteRenderer Tiled(string label, Transform parent, int order)
+        {
+            SpriteRenderer piece = Piece(label, parent, null, Vector2.zero, Vector2.one, Color.white, order);
+            piece.drawMode = SpriteDrawMode.Tiled;
+            return piece;
         }
 
         private static string Folder(int level) => LevelFolders[Mathf.Clamp(level, 0, LevelFolders.Length - 1)];

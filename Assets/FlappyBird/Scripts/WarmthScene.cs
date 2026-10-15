@@ -110,6 +110,7 @@ namespace FlappyBird
             House(pixels, 112, 170);
             House(pixels, 224, 166);
             House(pixels, 410, 181);
+            Chunky(pixels);
             Grain(pixels, 24);
             return Texture("Warmth village pixels", Width, Height, pixels);
         }
@@ -158,6 +159,17 @@ namespace FlappyBird
                 if (random.NextDouble() < 0.012) shift += random.Next(2) == 0 ? -26 : 26;
                 pixels[i] = Ink(Coarse(color.r + shift), Coarse(color.g + shift), Coarse(color.b + shift), color.a);
             }
+        }
+
+        // Half resolution, like the other backdrops (Art/make_sprites.py: CHUNKY).
+        private static void Chunky(Color32[] pixels)
+        {
+            for (int y = 0; y + 1 < Height; y += 2)
+                for (int x = 0; x + 1 < Width; x += 2)
+                {
+                    Color32 color = pixels[y * Width + x];
+                    pixels[y * Width + x + 1] = pixels[(y + 1) * Width + x] = pixels[(y + 1) * Width + x + 1] = color;
+                }
         }
 
         private static byte Coarse(int value) => (byte)Mathf.Clamp(Mathf.RoundToInt(value / 24f) * 24, 0, 255);

@@ -66,18 +66,8 @@ namespace FlappyBird
             ResetStorm();
         }
 
-        private GameObject Piece(string label, Sprite sprite, Vector2 position, Vector2 size, Color color, int order)
-        {
-            GameObject piece = new GameObject(label, typeof(SpriteRenderer));
-            piece.transform.SetParent(transform, false);
-            piece.transform.localPosition = position;
-            piece.transform.localScale = new Vector3(size.x, size.y, 1);
-            SpriteRenderer renderer = piece.GetComponent<SpriteRenderer>();
-            renderer.sprite = sprite;
-            renderer.color = color;
-            renderer.sortingOrder = order;
-            return piece;
-        }
+        private GameObject Piece(string label, Sprite sprite, Vector2 position, Vector2 size, Color color, int order) =>
+            PixelArt.Piece(label, transform, sprite, position, size, color, order).gameObject;
 
         // Start off-screen left; the normal follow eases it in.
         public void EnterFromLeft()

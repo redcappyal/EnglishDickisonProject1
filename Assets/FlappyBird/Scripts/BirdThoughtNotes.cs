@@ -67,16 +67,8 @@ namespace FlappyBird
             }
         }
 
-        private static SpriteRenderer Piece(Transform parent, Sprite sprite, Vector2 position, Vector2 size)
-        {
-            SpriteRenderer piece = new GameObject("Note Piece", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
-            piece.transform.SetParent(parent, false);
-            piece.transform.localPosition = position;
-            piece.transform.localScale = new Vector3(size.x, size.y, 1);
-            piece.sprite = sprite;
-            piece.sortingOrder = 12;
-            return piece;
-        }
+        private static SpriteRenderer Piece(Transform parent, Sprite sprite, Vector2 position, Vector2 size) =>
+            PixelArt.Piece("Note Piece", parent, sprite, position, size, Color.white, 12);
 
         private void Update()
         {
