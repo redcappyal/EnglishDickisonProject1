@@ -15,7 +15,7 @@ namespace FlappyBird
             ("THE WORLDS", 2, 2), ("HOPE - THE GALE - WARMTH - EXTREMITY", 3, 0), (null, 0, 0),
             ("ART, MUSIC AND SOUND", 2, 2), ("PIXEL ART AND SYNTHESIZED MUSIC, ALL MADE IN CODE", 2, 0), (null, 0, 0),
             ("INSPIRED BY", 2, 2), ("FLAPPY BIRD BY DONG NGUYEN", 2, 0), ("UNDERTALE BY TOBY FOX", 2, 0),
-            ("GEOMETRY DASH BY ROBERT TOPALA", 2, 0), (null, 0, 0),
+            ("GEOMETRY DASH BY ROBERT TOPALA", 2, 0), ("STARDEW VALLEY BY ERIC BARONE", 2, 0), (null, 0, 0),
             ("POEM TEXT", 2, 2), ("PUBLIC DOMAIN, VIA THE ACADEMY OF AMERICAN POETS", 2, 0), (null, 0, 0),
             ("MADE WITH UNITY 6 FOR HONORS AMERICAN LITERATURE", 2, 2), (null, 0, 0), (null, 0, 0),
             ("AND NEVER STOPS - AT ALL", 4, 1)

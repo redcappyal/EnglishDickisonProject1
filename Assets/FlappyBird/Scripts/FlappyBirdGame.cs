@@ -50,12 +50,12 @@ namespace FlappyBird
         private float LevelProgress => (float)(Score % ObstaclesPerLevel) / ObstaclesPerLevel;
 
         // Pages over the game - the poem, settings and the credits. The game pauses underneath.
-        private enum Overlay { None, Poem, Settings, Credits }
+        private enum Overlay { None, Poem, Settings, Credits, Levels }
         private Overlay overlay;
         private float timeScaleBeforeOverlay = 1f;
         private const string CreatorCredit = "Made by Alvin, Shridhar and Ishaan";
         // Shown on the title screen and poem page. See the version history in README.md.
-        public const string VersionLabel = "VERSION 1.8.0";
+        public const string VersionLabel = "VERSION 1.8.1";
         // Public-domain text: Academy of American Poets, poem 254 (Johnson).
         private const string PoemText =
             "Hope is the thing with feathers\n"
@@ -80,7 +80,9 @@ namespace FlappyBird
         private DickinsonBoss boss;
         private BirdThoughtNotes thoughts;
         private bool galeThunder;
-        private Rect settingsButton, titleSettingsButton;
+        private Rect settingsButton, titleSettingsButton, titleLevelsButton;
+        // Only a run from the first stanza can set a fewest-crashes record (not one picked from Levels).
+        private bool fullRun;
         private float lastCatch = -1, bossStart, nestSink;
         // How far the resting bird sinks into the nest: its lower half hides behind the bowl's rim.
         private const float NestDepth = 6 / PixelArt.PixelsPerUnit;
@@ -386,7 +388,7 @@ namespace FlappyBird
 #endif
             float scale = Screen.height / UiHeight;
             Vector2 ui = new Vector2(pointer.x / scale, (Screen.height - pointer.y) / scale);
-            if (showingTitle) return playButton.Contains(ui) || titlePoemButton.Contains(ui) || titleSettingsButton.Contains(ui);
+            if (showingTitle) return playButton.Contains(ui) || titlePoemButton.Contains(ui) || titleLevelsButton.Contains(ui) || titleSettingsButton.Contains(ui);
             return poemButton.Contains(ui) || playAgainButton.Contains(ui) || resetButton.Contains(ui) || settingsButton.Contains(ui);
         }
 
@@ -1056,13 +1058,38 @@ namespace FlappyBird
             if (!showingTitle) return;
             titleFadeAt = Time.unscaledTime;
             showingTitle = false;
+            fullRun = LevelIndex == 0;
             StartInterlude(LevelIndex);
+        }
+
+        // From the Levels page: a stanza (0-2) starts with its cutscene; 3 dips to dark and opens
+        // straight on the boss.
+        private void StartFrom(int level)
+        {
+            CloseOverlay();
+            if (level < 3)
+            {
+                SelectLevel(level);
+                StartGame();
+                return;
+            }
+            DipToDark(() =>
+            {
+                SelectLevel(2);
+                showingTitle = false;
+                titleFadeAt = Time.unscaledTime - 1; // the HUD is simply there when the dark lifts
+                fullRun = false;
+                nest.gameObject.SetActive(false);
+                State = PlayState.Boss;
+                bossStart = Time.time;
+                boss.Begin();
+            });
         }
 
         // A full run is over: keep it if it had the fewest crashes yet.
         private void SaveBest()
         {
-            newRecord = FewestCrashes < 0 || Crashes < FewestCrashes;
+            newRecord = fullRun && (FewestCrashes < 0 || Crashes < FewestCrashes);
             if (!newRecord) return;
             FewestCrashes = Crashes;
             PlayerPrefs.SetInt(BestKey, FewestCrashes);
@@ -1166,7 +1193,7 @@ namespace FlappyBird
             Color previousColor = GUI.color;
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1));
             GUI.color = Color.white;
-            playAgainButton = resetButton = settingsButton = titleSettingsButton = Rect.zero;
+            playAgainButton = resetButton = settingsButton = titleSettingsButton = titleLevelsButton = Rect.zero;
             float now = Time.unscaledTime;
             // Underneath: the title (fading out once you press Play) or the HUD (fading in).
             buttonsLive = overlay == Overlay.None;
@@ -1187,6 +1214,7 @@ namespace FlappyBird
                 GUI.color = new Color(1, 1, 1, uiAlpha);
                 if (overlay == Overlay.Poem) DrawPoem(width);
                 else if (overlay == Overlay.Settings) DrawSettings(width);
+                else if (overlay == Overlay.Levels) DrawLevels(width);
                 else DrawCreditsPage(width);
             }
             uiAlpha = 1;
@@ -1420,11 +1448,13 @@ namespace FlappyBird
             PixelUi.Text("A FLIGHT THROUGH EMILY DICKINSON'S POEM", width / 2, 208, 2, UiMuted, 0.5f);
 
             PixelUi.Fill(new Rect(0, 560, width, 132), new Color(0.12f, 0.08f, 0.2f, 0.35f));
-            playButton = new Rect(Mathf.Round(width / 2 - 195), 574, 192, 54);
+            playButton = new Rect(Mathf.Round(width / 2 - 276), 574, 192, 54);
             if (Button(playButton, "PLAY", 4)) StartGame();
             titlePoemButton = new Rect(playButton.xMax + 12, 574, 120, 54);
             if (Button(titlePoemButton, "POEM", 3)) Show(Overlay.Poem);
-            titleSettingsButton = new Rect(titlePoemButton.xMax + 12, 574, 54, 54);
+            titleLevelsButton = new Rect(titlePoemButton.xMax + 12, 574, 150, 54);
+            if (Button(titleLevelsButton, "LEVELS", 3)) Show(Overlay.Levels);
+            titleSettingsButton = new Rect(titleLevelsButton.xMax + 12, 574, 54, 54);
             if (Button(titleSettingsButton, "", 3, "settings")) Show(Overlay.Settings);
             PixelUi.SmallPrint(VersionLabel, UiMargin, UiHeight - UiMargin - 15, new Color(1, 1, 1, 0.7f));
             string hint = FewestCrashes >= 0 ? $"FEWEST CRASHES {FewestCrashes}  -  OR PRESS SPACE" : "OR PRESS SPACE";
@@ -1504,6 +1534,20 @@ namespace FlappyBird
             }
 
             if (Button(new Rect(left, page.y + 254, right - left, 48), "CREDITS", 3)) Show(Overlay.Credits);
+            if (Button(new Rect(page.center.x - 90, page.yMax - 82, 180, 48), "BACK", 3)) CloseOverlay();
+        }
+
+        private static readonly string[] LevelChoices = { "1 - HOPE", "2 - THE GALE", "3 - EXTREMITY", "3 - THE BOSS" };
+
+        private void DrawLevels(float width)
+        {
+            PixelUi.Fill(new Rect(0, 0, width, UiHeight), new Color(0.04f, 0.03f, 0.07f, 0.75f));
+            Rect page = new Rect(Mathf.Round((width - 460) / 2), 150, 460, 470);
+            PixelUi.Frame(page, "panel");
+            PixelUi.Text("LEVELS", page.center.x, page.y + 26, 5, LevelAccent[0], 0.5f);
+            for (int i = 0; i < LevelChoices.Length; i++)
+                if (Button(new Rect(page.x + 30, page.y + 84 + i * 66, page.width - 60, 52), LevelChoices[i], 3)) StartFrom(i);
+            PixelUi.SmallPrint("ONLY A RUN FROM LEVEL 1 CAN SET A RECORD", page.center.x - PixelUi.TextWidth("ONLY A RUN FROM LEVEL 1 CAN SET A RECORD", 2) / 2, page.y + 352, UiMuted);
             if (Button(new Rect(page.center.x - 90, page.yMax - 82, 180, 48), "BACK", 3)) CloseOverlay();
         }
 

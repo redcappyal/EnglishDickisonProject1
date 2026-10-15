@@ -2,7 +2,7 @@
 
 **The Thing With Feathers**, a Flappy Bird game built on Emily Dickinson's "Hope" is the thing with feathers, in Unity 6.
 
-**Play it in your browser:** https://flesheatingbacteria.github.io/EnglishDickisonProject1/ (Space, click or tap to flap; **M** mutes). The gear button opens **Settings**: volume, **easy mode** (a gentler boss fight) and the credits.
+**Play it in your browser:** https://flesheatingbacteria.github.io/EnglishDickisonProject1/ (Space, click or tap to flap; **M** mutes). The gear button opens **Settings**: volume, **easy mode** (a gentler boss fight) and the credits. **Levels** on the title screen starts from any stanza or straight at the boss (only a run from level 1 can set a record).
 
 ## Run
 
@@ -34,7 +34,7 @@ In Unity, **Flappy Bird > Build WebGL** writes the site to `Builds/WebGL` (gzip 
 
 ## Versions
 
-The version is shown on the title screen and the poem page. Each is tagged in git (`v1.0.0` ... `v1.8.0`).
+The version is shown on the title screen and the poem page. Each is tagged in git (`v1.0.0` ... `v1.8.1`).
 
 | Version | What changed |
 |---|---|
@@ -49,6 +49,7 @@ The version is shown on the title screen and the poem page. Each is tagged in gi
 | 1.6.0 | Boss fight against Emily Dickinson; sound effects; mute; WebGL build, playable online |
 | 1.7.0 | New boss attacks (Fascicles, Blanks, the Wave, Quills, Letter to the World); end credits; no flap sound; the bird sits in its nest; rougher pixel art everywhere |
 | 1.8.0 | One big tree from the ground in every world; page-turn transitions between boss attacks; longer Waves and a demon-level final Wave; Settings menu (volume slider, easy mode, credits); code tidied |
+| 1.8.1 | Levels button on the title screen (any stanza, or straight to the boss); Stardew Valley in the credits |
 
 A separate experimental version, **beta-version**, lives in the fork [flesheatingbacteria/EnglishDickisonProject1](https://github.com/flesheatingbacteria/EnglishDickisonProject1) ([play it](https://flesheatingbacteria.github.io/EnglishDickisonProject1/beta/)). It builds levels from the poem's form: meter, dashes and rhymes, and ends with "The Quiet" instead of the boss.
 
